@@ -2,46 +2,93 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Jeanz CFO Brain</title>
-    <link rel="icon" href="data:," />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0a0e0d" />
+    <title>Jeanz CFO · 私人财务大脑</title>
+    <meta
+      name="description"
+      content="把微信、支付宝的账单截图变成可追溯的本地账本：当期支出、预算进度、消费构成，以及一个读得懂你账本的 CFO Agent。"
+    />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Jeanz CFO · 私人财务大脑" />
+    <meta
+      property="og:description"
+      content="账单截图自动解析入库，本地 SQLite 存储，配一个能对着账本回答问题的 CFO Agent。"
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230f1413'/%3E%3Cpath d='M21.5 11.2a6.6 6.6 0 1 0 0 9.6' fill='none' stroke='%2358cda4' stroke-width='2.4' stroke-linecap='round'/%3E%3Cpath d='M9 22.6h14' stroke='%233a4844' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
     <style>
+      /* 首帧兜底：JS/CSS 到位前先把底色和加载指示画出来，避免白闪。 */
       html,
       body {
         margin: 0;
         min-height: 100%;
-        background: #070d0b;
-        color: #e9fff9;
+        background: #0a0e0d;
+        color: #d7dedb;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
       }
 
-      .app-loading-screen,
       #root:empty {
         position: fixed;
         inset: 0;
-        z-index: 120;
-        min-height: 100dvh;
         display: grid;
         place-items: center;
-        background:
-          radial-gradient(circle at 50% 50%, rgba(82, 241, 207, 0.075), transparent 30%),
-          #070d0b;
       }
 
-      .loading-spinner,
+      .app-loading-screen,
       #root:empty::before {
         content: "";
-        width: 34px;
-        height: 34px;
-        border: 1px solid rgba(122, 255, 226, 0.18);
-        border-top-color: #52f1cf;
-        border-radius: 999px;
-        box-shadow: 0 0 28px rgba(82, 241, 207, 0.16);
-        animation: loadingSpin 0.9s linear infinite;
+        position: fixed;
+        inset: 0;
+        z-index: 70;
+        display: grid;
+        place-items: center;
+        background: #0a0e0d;
       }
 
-      @keyframes loadingSpin {
-        to {
-          transform: rotate(360deg);
+      .loading-mark {
+        display: flex;
+        align-items: flex-end;
+        gap: 5px;
+        height: 26px;
+      }
+
+      .loading-mark-bar {
+        width: 4px;
+        height: 100%;
+        border-radius: 999px;
+        background: #3bb48d;
+        transform-origin: bottom;
+        transform: scaleY(0.32);
+        animation: bootBars 1.05s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+      }
+
+      .loading-mark-bar:nth-child(2) {
+        animation-delay: 0.14s;
+      }
+
+      .loading-mark-bar:nth-child(3) {
+        animation-delay: 0.28s;
+      }
+
+      @keyframes bootBars {
+        0%,
+        100% {
+          transform: scaleY(0.32);
+        }
+        50% {
+          transform: scaleY(1);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .loading-mark-bar {
+          animation: none;
+          transform: scaleY(0.6);
         }
       }
     </style>
@@ -49,9 +96,18 @@
   <body>
     <div id="root">
       <div class="app-loading-screen" aria-hidden="true">
-        <div class="loading-spinner"></div>
+        <div class="loading-mark">
+          <span class="loading-mark-bar"></span>
+          <span class="loading-mark-bar"></span>
+          <span class="loading-mark-bar"></span>
+        </div>
       </div>
     </div>
+    <noscript>
+      <p style="padding: 24px; line-height: 1.7">
+        这个页面需要 JavaScript 才能读取本地账本快照。请在浏览器中启用 JavaScript 后刷新。
+      </p>
+    </noscript>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

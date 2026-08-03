@@ -128,18 +128,32 @@ LOGIN_PAGE = """<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Jeanz CFO Brain 登录</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0a0e0d" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Jeanz CFO · 登录</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230f1413'/%3E%3Cpath d='M21.5 11.2a6.6 6.6 0 1 0 0 9.6' fill='none' stroke='%2358cda4' stroke-width='2.4' stroke-linecap='round'/%3E%3Cpath d='M9 22.6h14' stroke='%233a4844' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
     <style>
+      /* 与 web_app/styles.css 使用同一套墨绿中性色 + 玉色强调色 */
       :root {
         color-scheme: dark;
-        --bg: #06100d;
-        --panel: #0d1b17;
-        --line: rgba(80, 255, 218, 0.22);
-        --text: #effffb;
-        --muted: #8cab9f;
-        --accent: #48f1ce;
-        --danger: #ff7b72;
+        --ink-0: #070a09;
+        --ink-1: #0a0e0d;
+        --ink-2: #0f1413;
+        --ink-3: #141a18;
+        --line: #202a27;
+        --line-strong: #2b3733;
+        --text: #d7dedb;
+        --text-strong: #f1f5f3;
+        --muted: #8a9793;
+        --muted-dim: #75837f;
+        --jade-7: #3bb48d;
+        --jade-8: #58cda4;
+        --jade-line: #23453b;
+        --rose-8: #e58379;
       }
       * { box-sizing: border-box; }
       body {
@@ -149,76 +163,117 @@ LOGIN_PAGE = """<!doctype html>
         place-items: center;
         padding: 24px;
         background:
-          radial-gradient(circle at 70% 20%, rgba(72, 241, 206, 0.14), transparent 32%),
-          linear-gradient(145deg, #020504, var(--bg));
+          radial-gradient(120% 80% at 88% -10%, rgba(46, 158, 123, 0.1), transparent 58%),
+          linear-gradient(180deg, var(--ink-1), var(--ink-0));
         color: var(--text);
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+        font-size: 14.5px;
+        line-height: 1.65;
       }
       main {
-        width: min(440px, 100%);
+        width: min(400px, 100%);
+        padding: 32px;
         border: 1px solid var(--line);
-        background: linear-gradient(180deg, rgba(18, 40, 34, 0.96), rgba(7, 17, 14, 0.96));
-        border-radius: 8px;
-        padding: 28px;
-        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+        border-radius: 22px;
+        background: var(--ink-2);
+        box-shadow:
+          0 10px 24px rgba(3, 6, 5, 0.46),
+          0 56px 110px -28px rgba(3, 6, 5, 0.78),
+          inset 0 1px 0 rgba(255, 255, 255, 0.04);
       }
-      .mark {
-        width: 44px;
-        height: 44px;
-        display: grid;
-        place-items: center;
-        border: 1px solid rgba(72, 241, 206, 0.42);
-        border-radius: 8px;
-        color: var(--accent);
-        font-weight: 800;
-        margin-bottom: 18px;
+      .mark { display: block; width: 36px; height: 36px; margin-bottom: 22px; }
+      h1 {
+        margin: 0 0 6px;
+        color: var(--text-strong);
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: -0.018em;
       }
-      h1 { margin: 0 0 8px; font-size: 28px; letter-spacing: 0; }
-      p { margin: 0 0 24px; color: var(--muted); line-height: 1.7; }
-      label { display: block; color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+      .lede { margin: 0 0 26px; color: var(--muted); font-size: 13px; }
+      label {
+        display: block;
+        margin-bottom: 7px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.05em;
+      }
       input {
         width: 100%;
-        height: 48px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: #06110e;
-        color: var(--text);
+        height: 44px;
         padding: 0 14px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--ink-1);
+        color: var(--text-strong);
+        font: inherit;
         font-size: 16px;
-        outline: none;
+        outline: 0;
+        transition: border-color 200ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 200ms cubic-bezier(0.16, 1, 0.3, 1);
       }
-      input:focus { border-color: rgba(72, 241, 206, 0.72); }
+      input:focus {
+        border-color: var(--jade-line);
+        box-shadow: 0 0 0 3px rgba(46, 158, 123, 0.12);
+      }
       button {
         width: 100%;
-        height: 48px;
-        margin-top: 16px;
-        border: 0;
-        border-radius: 8px;
-        background: var(--accent);
-        color: #02110d;
-        font-weight: 800;
-        font-size: 16px;
-        cursor: pointer;
-      }
-      .error {
-        min-height: 22px;
+        height: 44px;
         margin-top: 14px;
-        color: var(--danger);
+        border: 0;
+        border-radius: 10px;
+        background: var(--jade-8);
+        color: var(--ink-0);
+        font: inherit;
         font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 200ms cubic-bezier(0.16, 1, 0.3, 1), transform 120ms;
+      }
+      button:hover { background: #93e4c4; }
+      button:active { transform: translateY(1px); }
+      button:focus-visible {
+        outline: 0;
+        box-shadow: 0 0 0 2px var(--ink-2), 0 0 0 4px var(--jade-7);
+      }
+      .error:not(:empty) {
+        margin-top: 14px;
+        padding: 9px 12px;
+        border: 1px solid #b8564b;
+        border-radius: 10px;
+        background: #241110;
+        color: var(--rose-8);
+        font-size: 13px;
+      }
+      .foot {
+        margin: 22px 0 0;
+        padding-top: 18px;
+        border-top: 1px solid var(--line);
+        color: var(--muted-dim);
+        font-size: 11px;
+        line-height: 1.6;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * { transition-duration: 0.01ms !important; }
       }
     </style>
   </head>
   <body>
     <main>
-      <div class="mark">C</div>
-      <h1>Jeanz CFO Brain</h1>
-      <p>这是 {owner} 的私人财务账本。请输入访问口令后继续。</p>
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="9" fill="#141a18" stroke="#2b3733" />
+        <path d="M21.5 11.2a6.6 6.6 0 1 0 0 9.6" fill="none" stroke="#58cda4" stroke-width="2" stroke-linecap="round" />
+        <path d="M9 22.6h14" stroke="#3a4844" stroke-width="1.6" stroke-linecap="round" />
+      </svg>
+      <h1>Jeanz CFO</h1>
+      <p class="lede">这是 {owner} 的私人财务账本，输入访问口令后继续。</p>
       <form method="post" action="/api/login">
         <label for="token">访问口令</label>
         <input id="token" name="token" type="password" autocomplete="current-password" autofocus />
         <button type="submit">进入账本</button>
       </form>
-      <div class="error">{error}</div>
+      <div class="error" role="alert">{error}</div>
+      <p class="foot">账本与账单截图都存放在这台机器上，不会上传到第三方服务。</p>
     </main>
   </body>
 </html>"""
