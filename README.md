@@ -4,7 +4,7 @@
 
 <img src="cfo_agent_poc/web_app/assets/cfo-agent-hero.png" alt="Jeanz CFO Brain" width="640">
 
-# Jeanz CFO Brain
+# My CFO Brain
 
 **支付后点一下，账单自动变成能分析、能追问的个人现金流系统。**
 
