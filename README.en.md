@@ -2,7 +2,7 @@
 
 [中文](README.md) · **English**
 
-<img src="cfo_agent_poc/web_app/assets/cfo-agent-hero.png" alt="Jeanz CFO Brain" width="640">
+<img src="cfo_agent_poc/web_app/assets/cfo-agent-hero.webp" alt="Jeanz CFO Brain" width="640">
 
 # Jeanz CFO Brain
 
@@ -20,7 +20,7 @@ iPhone Shortcut captures a bill screenshot → local OCR & rule-based parsing on
 
 [Why](#-why-this-exists) · [How it works](#-the-journey-of-one-payment) · [Quick start](#-quick-start) · [Architecture](#%EF%B8%8F-architecture) · [Design highlights](#-design-highlights) · [Roadmap](#%EF%B8%8F-roadmap)
 
-<img src="cfo_agent_poc/docs/assets/demo.gif" alt="Demo: switch periods, explore the finance dashboard, ask your ledger questions" width="820">
+<img src="cfo_agent_poc/docs/assets/demo.gif" alt="Demo: drill from the cash-flow trend into one week's ledger, switch to all-time analysis, then ask the ledger a question" width="820">
 
 </div>
 

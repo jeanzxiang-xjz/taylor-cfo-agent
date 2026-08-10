@@ -2,7 +2,7 @@
 
 **中文** · [English](README.en.md)
 
-<img src="cfo_agent_poc/web_app/assets/cfo-agent-hero.png" alt="Jeanz CFO Brain" width="640">
+<img src="cfo_agent_poc/web_app/assets/cfo-agent-hero.webp" alt="Jeanz CFO Brain" width="640">
 
 # My CFO Brain
 
@@ -20,7 +20,7 @@ iPhone 快捷指令捕获账单截图 → Mac 本地 OCR 与规则解析 → SQL
 
 [为什么做它](#-为什么做它) · [工作原理](#-一笔钱的旅程) · [快速上手](#-快速上手) · [架构](#-系统架构) · [设计亮点](#-设计亮点) · [Roadmap](#%EF%B8%8F-roadmap)
 
-<img src="cfo_agent_poc/docs/assets/demo.gif" alt="Demo：切换周期、查看财务大脑、直接向账本提问" width="820">
+<img src="cfo_agent_poc/docs/assets/demo.gif" alt="Demo：从现金流趋势下钻到某一周、跳转到对应账本、切到全部看消费分析，再直接向账本提问" width="820">
 
 </div>
 
