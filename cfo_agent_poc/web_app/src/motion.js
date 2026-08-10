@@ -2,16 +2,25 @@
  * 动效层。原则：
  * 1. 开场不挡路 —— 一次会话只播一次，可跳过，最多等数据 1.2s。
  * 2. 只做入场和状态反馈，不做常驻循环动画。
- * 3. 只动 transform / opacity。
+ * 3. 以 transform / opacity 为主，刷新反馈辅以短暂 blur / clipPath。
  * 4. prefers-reduced-motion 下整套直接跳过。
  */
 (function () {
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const OPENING_SEEN_KEY = "cfoOpeningSeen";
   const DATA_WAIT_MS = 1200;
+
+  // 开场节奏（想调快慢改这两个数就行，单位秒）：
+  //   0 → BUILD_END      入场：发丝线 / 字幕 / 插画依次铺开
+  //   BUILD_END → +HOLD  停留：画面静止，同时把账本数据等完
+  //   之后                退场：内容上移淡出 + 整屏向上擦除，露出应用
+  // 三段严格串行。之前入场还没走完退场就开始了，所以才一闪而过。
+  const OPENING_BUILD_END = 1.6;
+  const OPENING_HOLD = 1.8;
+  const OPENING_EXIT_AT = OPENING_BUILD_END + OPENING_HOLD;
 
   let initialized = false;
   let openingDone = false;
+  let dynamicSnapshot = null;
 
   function $(selector, root = document) {
     return root.querySelector(selector);
@@ -22,28 +31,20 @@
   }
 
   function hasGsap() {
-    return Boolean(window.gsap && window.ScrollTrigger);
-  }
-
-  function openingAlreadySeen() {
-    try {
-      return sessionStorage.getItem(OPENING_SEEN_KEY) === "1";
-    } catch {
-      return false;
-    }
-  }
-
-  function markOpeningSeen() {
-    try {
-      sessionStorage.setItem(OPENING_SEEN_KEY, "1");
-    } catch {
-      /* 隐私模式下 sessionStorage 可能不可写，忽略即可。 */
-    }
+    return Boolean(window.gsap);
   }
 
   function waitForData(timeout = DATA_WAIT_MS) {
     return Promise.race([
       Promise.resolve(window.cfoDataReady).catch(() => undefined),
+      new Promise((resolve) => window.setTimeout(resolve, timeout)),
+    ]);
+  }
+
+  /** 开场插画要先解码完，否则擦除动画播完了图才跳出来。 */
+  function waitForStatic(timeout = 900) {
+    return Promise.race([
+      Promise.resolve(window.cfoStaticReady).catch(() => undefined),
       new Promise((resolve) => window.setTimeout(resolve, timeout)),
     ]);
   }
@@ -70,7 +71,6 @@
     document.body.classList.remove("app-loading", "motion-running");
     document.body.classList.add("motion-ready", "motion-complete");
     openingDone = true;
-    markOpeningSeen();
   }
 
   /* ------------------------------ 无动效路径 ------------------------------ */
@@ -80,6 +80,7 @@
     if (overlay) overlay.style.display = "none";
     document.documentElement.classList.add("motion-reduced");
     settleApp();
+    primeDynamicState();
   }
 
   /* ------------------------------ 开场 ------------------------------ */
@@ -103,31 +104,58 @@
         gsap.set([rail, heroFigure, heroChat].filter(Boolean), { clearProps: "transform,opacity,visibility" });
         settleApp();
         setupScrollAnimations();
-        window.ScrollTrigger.refresh();
+        primeDynamicState();
       },
     });
 
     timeline
-      .fromTo(".opening-kicker", { y: 14, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.34 }, 0)
+      // —— 入场：0 → OPENING_BUILD_END ——
+      .fromTo(".opening-rule", { scaleX: 0 }, { scaleX: 1, duration: 0.86, stagger: 0.1, ease: "power3.out" }, 0)
+      .fromTo(".opening-kicker", { y: 16, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.46 }, 0.14)
       .fromTo(
-        ".opening-title span",
-        { yPercent: 108, autoAlpha: 0 },
-        { yPercent: 0, autoAlpha: 1, duration: 0.62, stagger: 0.07, ease: "expo.out" },
-        0.06,
+        ".opening-title > span > i",
+        { yPercent: 112, scaleX: 0.86, autoAlpha: 0 },
+        { yPercent: 0, scaleX: 1, autoAlpha: 1, duration: 0.94, stagger: 0.11, ease: "expo.out" },
+        0.24,
       )
-      .fromTo(".opening-scan", { scaleX: 0 }, { scaleX: 1, duration: 0.55 }, 0.3)
-      .fromTo(".opening-meta", { y: 10, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.34 }, 0.42)
+      .fromTo(
+        ".opening-illustration-wrap",
+        { x: 36, autoAlpha: 0, clipPath: "inset(0% 0% 100% 0%)" },
+        { x: 0, autoAlpha: 1, clipPath: "inset(0% 0% 0% 0%)", duration: 0.94, ease: "power4.out" },
+        0.5,
+      )
+      .fromTo(
+        ".opening-illustration",
+        { scale: 1.08, y: 16 },
+        { scale: 1, y: 0, duration: 1.05, ease: "power4.out" },
+        0.55,
+      )
+      // 宣传语跟在字标后面起，发丝线随即从它下方拉过
+      .fromTo(".opening-tagline", { y: 14, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.56 }, 0.56)
+      .fromTo(".opening-scan", { scaleX: 0 }, { scaleX: 1, duration: 0.74 }, 0.68)
+      .fromTo(".opening-subline", { y: 12, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.46 }, 0.98)
+      .fromTo(".opening-skip", { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.4 }, 1.15)
+
+      // —— 停留：铺完之后静止 OPENING_HOLD 秒，顺带把数据等完 ——
       .add(() => {
         timeline.pause();
         waitForData().finally(() => {
           if (!openingDone) timeline.resume();
         });
-      }, 0.72)
-      .to(".opening-inner", { y: -18, autoAlpha: 0, duration: 0.4, ease: "power2.in" }, 0.78)
-      .to(overlay, { clipPath: "inset(0% 0% 100% 0%)", duration: 0.62, ease: "power4.inOut" }, 0.86)
-      .to(rail, { y: 0, autoAlpha: 1, duration: 0.5 }, 1.0)
-      .to(heroFigure, { y: 0, autoAlpha: 1, duration: 0.62 }, 1.06)
-      .to(heroChat, { y: 0, autoAlpha: 1, duration: 0.62 }, 1.14);
+      }, OPENING_EXIT_AT)
+
+      // —— 退场 ——
+      .to(".opening-skip", { autoAlpha: 0, duration: 0.25 }, OPENING_EXIT_AT)
+      .to(".opening-content", { y: -18, autoAlpha: 0, duration: 0.46, ease: "power2.in" }, OPENING_EXIT_AT + 0.04)
+      .to(
+        ".opening-rule",
+        { scaleX: 0, transformOrigin: "right center", duration: 0.5, ease: "power2.in" },
+        OPENING_EXIT_AT + 0.08,
+      )
+      .to(overlay, { clipPath: "inset(0% 0% 100% 0%)", duration: 0.7, ease: "power4.inOut" }, OPENING_EXIT_AT + 0.22)
+      .to(rail, { y: 0, autoAlpha: 1, duration: 0.52 }, OPENING_EXIT_AT + 0.42)
+      .to(heroFigure, { y: 0, autoAlpha: 1, duration: 0.64 }, OPENING_EXIT_AT + 0.48)
+      .to(heroChat, { y: 0, autoAlpha: 1, duration: 0.64 }, OPENING_EXIT_AT + 0.56);
 
     window.skipCfoOpening = () => {
       if (openingDone) return;
@@ -136,38 +164,12 @@
       window.gsap.set(overlay, { autoAlpha: 0 });
       settleApp();
       setupScrollAnimations();
-      window.ScrollTrigger.refresh();
+      primeDynamicState();
+      Promise.resolve(window.cfoDataReady).then(primeDynamicState).catch(() => undefined);
     };
 
     $("[data-opening-skip]")?.addEventListener("click", () => window.skipCfoOpening());
     overlay?.addEventListener("click", () => window.skipCfoOpening());
-  }
-
-  /** 本次会话已经看过开场：直接把首屏做一次轻入场。 */
-  function quickEnter() {
-    const gsap = window.gsap;
-    const overlay = $(".opening-overlay");
-    if (overlay) overlay.style.display = "none";
-    document.body.classList.remove("app-loading");
-    document.body.classList.add("motion-ready");
-
-    gsap.fromTo(
-      [".rail", ".hero-figure", ".hero-chat"],
-      { y: 14, autoAlpha: 0 },
-      {
-        y: 0,
-        autoAlpha: 1,
-        duration: 0.5,
-        stagger: 0.07,
-        ease: "power3.out",
-        clearProps: "transform,opacity,visibility",
-        onComplete: () => {
-          settleApp();
-          setupScrollAnimations();
-          window.ScrollTrigger.refresh();
-        },
-      },
-    );
   }
 
   /* ------------------------------ 滚动入场 ------------------------------ */
@@ -177,87 +179,133 @@
     ledger: ".filter-bar, .table-wrap, .ledger-pagination",
   };
 
+  function playReveal(element, keyframes, options) {
+    if (!element?.animate) return;
+    element.animate(keyframes, {
+      duration: options.duration,
+      delay: options.delay || 0,
+      easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+      fill: "backwards",
+    });
+  }
+
   function revealSection(sectionId, targetSelector) {
     const section = document.getElementById(sectionId);
     if (!section || section.dataset.motionPrepared) return;
     section.dataset.motionPrepared = "true";
 
-    const gsap = window.gsap;
-    const titleInner = $(".section-head .motion-title-mask > span", section);
-    const copy = $(".section-head p", section);
-    const cards = $$(targetSelector, section);
+    const reveal = () => {
+      if (section.dataset.motionRevealed) return;
+      section.dataset.motionRevealed = "true";
+      const titleInner = $(".section-head .motion-title-mask > span", section);
+      const copy = $(".section-head p", section);
+      const cards = $$(targetSelector, section);
+      playReveal(titleInner, [
+        { opacity: 0.55, transform: "translateY(8px)" },
+        { opacity: 1, transform: "none" },
+      ], { duration: 240 });
+      playReveal(copy, [
+        { opacity: 0.55, transform: "translateY(6px)" },
+        { opacity: 1, transform: "none" },
+      ], { duration: 200, delay: 30 });
+      cards.forEach((card, index) => {
+        playReveal(card, [
+          { opacity: 0.45, transform: "translateY(10px)" },
+          { opacity: 1, transform: "none" },
+        ], { duration: 260, delay: Math.min(index * 36, 108) });
+      });
+    };
 
-    gsap.set(titleInner, { yPercent: 110 });
-    gsap.set(copy, { y: 12, autoAlpha: 0 });
-    gsap.set(cards, { y: 20, autoAlpha: 0 });
-
-    gsap
-      .timeline({
-        scrollTrigger: { trigger: section, start: "top 82%", once: true },
-        defaults: { ease: "power3.out" },
-      })
-      .to(titleInner, { yPercent: 0, duration: 0.72 })
-      .to(copy, { y: 0, autoAlpha: 1, duration: 0.5 }, "-=0.5")
-      .to(cards, { y: 0, autoAlpha: 1, duration: 0.55, stagger: 0.06, clearProps: "transform" }, "-=0.38");
+    if (!("IntersectionObserver" in window)) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      observer.disconnect();
+      reveal();
+    }, { rootMargin: "0px 0px -12% 0px", threshold: 0.04 });
+    observer.observe(section);
   }
 
   function setupScrollAnimations() {
     Object.entries(SECTION_TARGETS).forEach(([id, selector]) => revealSection(id, selector));
-    // 保险丝：只处理「已经进入视口却还是全透明」的情况——
-    // ScrollTrigger 没起作用时内容不能永远看不见，但正常的滚动入场不受影响。
-    const rescue = () => {
-      Object.entries(SECTION_TARGETS).forEach(([id, selector]) => {
-        const section = document.getElementById(id);
-        if (!section) return;
-        if (section.getBoundingClientRect().top > window.innerHeight * 0.9) return;
-        const stuck = $$(selector, section).filter((node) => Number(getComputedStyle(node).opacity) < 0.05);
-        if (stuck.length) window.gsap.set(stuck, { clearProps: "all" });
-      });
-    };
-    window.setTimeout(rescue, 2600);
-    window.addEventListener("load", () => window.setTimeout(rescue, 1200), { once: true });
   }
 
   /* ------------------------------ 数据变化反馈 ------------------------------ */
 
+  const VALUE_TARGETS = [
+    "#coreAmount",
+    "#coreDelta",
+    "#primaryMeta",
+    "#heroBudgetValue",
+    "#heroBudgetFoot",
+    "#avgDailySpend",
+    "#txnCount",
+    "#largestSpend",
+    "#confidenceScore",
+    "#signalMeta",
+    "#categoryCount",
+  ];
+  const REGION_TARGETS = ["#coreNarrative", "#decisionFeed", "#coreNodes", "#categoryStack"];
+
+  function snapshotDynamicContent() {
+    const values = new Map(VALUE_TARGETS.map((selector) => [selector, $(selector)?.textContent?.trim() || ""]));
+    const regions = new Map(REGION_TARGETS.map((selector) => [selector, $(selector)?.textContent?.replace(/\s+/g, " ").trim() || ""]));
+    const rows = new Map($$(".txn-row[data-transaction-uid]").map((row) => [
+      row.dataset.transactionUid,
+      row.textContent?.replace(/\s+/g, " ").trim() || "",
+    ]));
+    return { values, regions, rows };
+  }
+
+  function primeDynamicState() {
+    dynamicSnapshot = snapshotDynamicContent();
+  }
+
+  function animateNode(node, keyframes, options) {
+    if (!node?.animate || node.hidden) return;
+    node.getAnimations().forEach((animation) => animation.cancel());
+    node.animate(keyframes, {
+      duration: options.duration,
+      delay: options.delay || 0,
+      easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+      fill: "backwards",
+    });
+  }
+
   function animateDynamicContent(options = {}) {
-    if (!initialized || reduceMotion || !hasGsap()) return;
-    window.ScrollTrigger.refresh();
-    if (options.quiet) return;
-
-    const gsap = window.gsap;
+    if (!initialized || reduceMotion) return;
     const scope = options.scope || "global";
-    const ledgerTargets = $$(".txn-row");
+    const previous = dynamicSnapshot;
+    const current = snapshotDynamicContent();
+    dynamicSnapshot = current;
+    if (options.quiet || !previous) return;
 
-    const run = (targets, config = {}) => {
-      if (!targets.length) return;
-      gsap.fromTo(
-        targets,
-        { y: config.y ?? 10, autoAlpha: 0 },
-        {
-          y: 0,
-          autoAlpha: 1,
-          duration: config.duration ?? 0.42,
-          stagger: config.stagger ?? 0.03,
-          ease: "power2.out",
-          overwrite: true,
-          clearProps: "transform",
-        },
-      );
-    };
+    const changedRows = $$(".txn-row[data-transaction-uid]").filter((row) => {
+      const uid = row.dataset.transactionUid;
+      return previous.rows.get(uid) !== current.rows.get(uid);
+    });
+    changedRows.forEach((row, index) => {
+      animateNode(row, [
+        { opacity: 0.45, transform: "translateY(4px)" },
+        { opacity: 1, transform: "none" },
+      ], { duration: 220, delay: Math.min(index * 12, 72) });
+    });
 
     if (scope === "ledger") {
-      run(ledgerTargets, { duration: 0.3, stagger: 0.018, y: 8 });
       return;
     }
 
-    // 周期切换：数字轻微上浮，让「这块变了」一眼可见。
-    const figure = $("#coreAmount");
-    if (figure) {
-      gsap.fromTo(figure, { y: 8, autoAlpha: 0.2 }, { y: 0, autoAlpha: 1, duration: 0.42, ease: "power3.out", overwrite: true });
-    }
-    run($$(".stat strong, .decision-item, .category-row, .composition-legend > li"), { y: 8, stagger: 0.025 });
-    run(ledgerTargets, { duration: 0.3, stagger: 0.018, y: 8 });
+    VALUE_TARGETS.forEach((selector) => {
+      if (previous.values.get(selector) === current.values.get(selector)) return;
+      animateNode($(selector), [
+        { opacity: 0.48, transform: "translateY(4px)" },
+        { opacity: 1, transform: "none" },
+      ], { duration: 220 });
+    });
+
+    REGION_TARGETS.forEach((selector) => {
+      if (previous.regions.get(selector) === current.regions.get(selector)) return;
+      animateNode($(selector), [{ opacity: 0.68 }, { opacity: 1 }], { duration: 180 });
+    });
   }
 
   /* ------------------------------ 对外接口 ------------------------------ */
@@ -277,15 +325,10 @@
       return;
     }
 
-    window.gsap.registerPlugin(window.ScrollTrigger);
     markMotionTargets();
 
-    if (openingAlreadySeen()) {
-      await waitForData();
-      quickEnter();
-      return;
-    }
-
+    // 每次刷新都完整播放；不想看的用 Esc / 点击跳过。
+    await waitForStatic();
     playOpening();
   };
 

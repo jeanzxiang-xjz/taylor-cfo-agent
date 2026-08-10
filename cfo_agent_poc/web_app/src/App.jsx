@@ -1,5 +1,10 @@
+import openingImage from "../assets/opening-cfo-illustration.webp";
+
 // 首屏静态骨架。所有 id / data-* 属性都是 legacy-controller.js 的渲染契约，
 // 改名前请同步检查 src/legacy-controller.js。
+
+// 开场插画必须先解码完成，否则擦除动画会先播、图后跳出来。
+export const CRITICAL_IMAGE_URLS = [openingImage];
 
 function AppLoadingScreen() {
   return (
@@ -14,20 +19,36 @@ function AppLoadingScreen() {
 }
 
 /**
- * 开场动画：只做一次品牌字幕擦除，可点击/按键跳过，
- * 数据就绪或 1.4s 超时（以先到者为准）后自动收起。
+ * 开场页：左侧品牌字幕、右侧线稿插画取景框。
+ * 可点击 / Esc 跳过，一次会话只播一次，数据就绪或 1.2s 超时后收起。
  */
 function OpeningOverlay() {
   return (
     <div className="opening-overlay" role="presentation">
-      <div className="opening-inner">
-        <p className="opening-kicker">本地账本 · 实时解析</p>
-        <div className="opening-title">
-          <span>Jeanz</span>
-          <span>CFO</span>
+      <div className="opening-frame">
+        <span className="opening-rule opening-rule-top" aria-hidden="true" />
+        <div className="opening-content">
+          <div className="opening-copy">
+            <p className="opening-kicker">PRIVATE CASHFLOW INTELLIGENCE</p>
+            <div className="opening-title">
+              <span>
+                <i>Jeanz</i>
+              </span>
+              <span>
+                <i>CFO</i>
+              </span>
+            </div>
+            <p className="opening-tagline">让每一笔，都变成更好的选择</p>
+            <span className="opening-scan" aria-hidden="true" />
+            <p className="opening-subline">一个会记录、会分析、会提醒你的私人 CFO Agent</p>
+          </div>
+          <div className="opening-illustration-wrap">
+            <span className="opening-illustration-glow" aria-hidden="true" />
+            <img className="opening-illustration" src={openingImage} alt="" />
+            <span className="opening-sweep" aria-hidden="true" />
+          </div>
         </div>
-        <div className="opening-scan" />
-        <p className="opening-meta">正在读取账本快照</p>
+        <span className="opening-rule opening-rule-bottom" aria-hidden="true" />
       </div>
       <button className="opening-skip" type="button" data-opening-skip>
         跳过 <kbd>Esc</kbd>
@@ -156,31 +177,141 @@ function OverviewHero() {
         </div>
 
         <button className="hero-spark" id="heroSpark" type="button" aria-label="查看现金流趋势">
-          <span className="hero-spark-head">
-            <span className="micro-label">近 7 天</span>
-            <span className="hero-spark-cta">
-              趋势
+          <span id="heroTrendContent" className="hero-trend-content">
+            <span className="hero-spark-head">
+              <span className="micro-label">现金流</span>
+              <span className="hero-spark-cta">
+                查看趋势
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                  <path d="M6 3.5 10.5 8 6 12.5" />
+                </svg>
+              </span>
+            </span>
+            {/*
+              走势徽标：抽象波形柱，不吃数据。高度包络是设计出来的——平缓起、
+              中段主峰、尾部收在中位；刻意不做成向右上方的爬升，记账产品里那读作「花得更多」。
+              每根柱是一条 non-scaling-stroke 的 line：容器横向被拉伸 3 倍多，
+              用 stroke 才能保证柱宽和圆头在任何宽度下都不变形。
+            */}
+            <span className="hero-spark-chart" id="heroSparkChart" aria-hidden="true">
+              <svg className="spark-wave-svg" viewBox="0 0 140 46" preserveAspectRatio="none" focusable="false">
+                <defs>
+                  <linearGradient id="sparkWaveStroke" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="140" y2="0">
+                    <stop className="spark-wave-stop-dim" offset="0" />
+                    <stop className="spark-wave-stop-mid" offset="0.55" />
+                    <stop className="spark-wave-stop-lit" offset="1" />
+                  </linearGradient>
+                </defs>
+                <g className="spark-wave-bars">
+                  <line x1="2.19" y1="45" x2="2.19" y2="33.02" />
+                  <line x1="6.56" y1="45" x2="6.56" y2="31.64" />
+                  <line x1="10.94" y1="45" x2="10.94" y2="30.59" />
+                  <line x1="15.31" y1="45" x2="15.31" y2="30" />
+                  <line x1="19.69" y1="45" x2="19.69" y2="29.65" />
+                  <line x1="24.06" y1="45" x2="24.06" y2="29.05" />
+                  <line x1="28.44" y1="45" x2="28.44" y2="27.81" />
+                  <line x1="32.81" y1="45" x2="32.81" y2="25.89" />
+                  <line x1="37.19" y1="45" x2="37.19" y2="23.67" />
+                  <line x1="41.56" y1="45" x2="41.56" y2="21.81" />
+                  <line x1="45.94" y1="45" x2="45.94" y2="20.81" />
+                  <line x1="50.31" y1="45" x2="50.31" y2="20.78" />
+                  <line x1="54.69" y1="45" x2="54.69" y2="21.29" />
+                  <line x1="59.06" y1="45" x2="59.06" y2="21.57" />
+                  <line x1="63.44" y1="45" x2="63.44" y2="20.86" />
+                  <line x1="67.81" y1="45" x2="67.81" y2="18.8" />
+                  <line x1="72.19" y1="45" x2="72.19" y2="15.64" />
+                  <line x1="76.56" y1="45" x2="76.56" y2="12.18" />
+                  <line x1="80.94" y1="45" x2="80.94" y2="9.49" />
+                  <line x1="85.31" y1="45" x2="85.31" y2="8.47" />
+                  <line x1="89.69" y1="45" x2="89.69" y2="9.48" />
+                  <line x1="94.06" y1="45" x2="94.06" y2="12.22" />
+                  <line x1="98.44" y1="45" x2="98.44" y2="15.81" />
+                  <line x1="102.81" y1="45" x2="102.81" y2="19.21" />
+                  <line x1="107.19" y1="45" x2="107.19" y2="21.6" />
+                  <line x1="111.56" y1="45" x2="111.56" y2="22.62" />
+                  <line x1="115.94" y1="45" x2="115.94" y2="22.43" />
+                  <line x1="120.31" y1="45" x2="120.31" y2="21.58" />
+                  <line x1="124.69" y1="45" x2="124.69" y2="20.65" />
+                  <line x1="129.06" y1="45" x2="129.06" y2="20.12" />
+                  <line x1="133.44" y1="45" x2="133.44" y2="20.15" />
+                  <line x1="137.81" y1="45" x2="137.81" y2="20.66" />
+                </g>
+                <line className="spark-wave-base" x1="0" y1="45.5" x2="140" y2="45.5" />
+              </svg>
+            </span>
+          </span>
+
+          <span id="heroProfileContent" className="hero-profile-content" hidden>
+            <span className="hero-profile-mark" aria-hidden="true">
+              <svg viewBox="0 0 48 48" focusable="false">
+                <circle cx="24" cy="24" r="18" />
+                <path d="M14 29.5c4.2-8.2 8.2-4.6 11.2-10.8 2.4-4.8 5.5-2.5 8.8-5.2" />
+                <circle cx="14" cy="29.5" r="2.2" />
+                <circle cx="25.2" cy="18.7" r="2.2" />
+                <circle cx="34" cy="13.5" r="2.2" />
+              </svg>
+            </span>
+            <span className="hero-profile-copy">
+              <strong>你的钱，藏着一种生活流派</strong>
+              <small id="heroProfileMeta">正在整理全部消费记录</small>
+            </span>
+            <span className="hero-profile-action">
+              <span id="heroProfileActionLabel">生成画像</span>
               <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
                 <path d="M6 3.5 10.5 8 6 12.5" />
               </svg>
             </span>
           </span>
-          <span className="hero-spark-chart" id="heroSparkChart" />
         </button>
       </article>
 
-      <article className="panel hero-chat" aria-label="CFO 对话">
+      <article id="heroChat" className="panel hero-chat" aria-label="CFO 对话">
         <header className="chat-head">
-          <div className="chat-head-title">
-            <span className="pulse-dot" aria-hidden="true" />
-            <h2>与 CFO Agent 对话</h2>
+          <div className="chat-head-row">
+            <div className="chat-head-title">
+              <span className="pulse-dot" aria-hidden="true" />
+              <h2>与 CFO Agent 对话</h2>
+            </div>
+            <div className="chat-head-actions">
+              <button id="copyLastAnswerButton" className="chat-icon-action" type="button" aria-label="复制最近一条 CFO 回答" title="复制最近回答" hidden>
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                  <rect x="5.2" y="4.2" width="7.2" height="8.2" rx="1.2" />
+                  <path d="M9.2 4.2V3.4A1.4 1.4 0 0 0 7.8 2H4.2A1.4 1.4 0 0 0 2.8 3.4v6.8a1.4 1.4 0 0 0 1.4 1.4h1" />
+                </svg>
+              </button>
+              <button id="clearChatButton" className="chat-icon-action" type="button" aria-label="清空当前会话" title="清空会话">
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                  <path d="M2.6 4.8h10.8M5.3 4.8V3h5.4v1.8M4 4.8l.6 8.4h6.8l.6-8.4M6.6 7v4.2M9.4 7v4.2" />
+                </svg>
+              </button>
+              <button id="expandChatButton" className="chat-mode-action" type="button" aria-label="展开对话" aria-expanded="false" aria-controls="heroChat" title="展开对话">
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                  <path d="M2.8 6V3.2H5.6M10.4 3.2h2.8V6M13.2 10v2.8h-2.8M5.6 12.8H2.8V10" />
+                </svg>
+                <span>展开对话</span>
+              </button>
+              <button id="closeChatExpandButton" className="chat-mode-action" type="button" aria-label="退出展开对话" title="退出展开对话" hidden>
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                  <path d="M5.6 2.8H2.8v2.8M10.4 2.8h2.8v2.8M13.2 10.4v2.8h-2.8M2.8 10.4v2.8h2.8" />
+                </svg>
+                <span>退出展开</span>
+              </button>
+            </div>
           </div>
           <p id="headerSummary" className="chat-head-summary">
             正在读取账本快照。
           </p>
         </header>
 
-        <div id="chatMessages" className="chat-messages" role="log" aria-live="polite" aria-label="对话记录" tabIndex={0} />
+        <div className="chat-message-stage">
+          <div id="chatMessages" className="chat-messages" role="log" aria-live="polite" aria-label="对话记录" tabIndex={0} />
+          <button id="chatLatestButton" className="chat-latest-button" type="button" title="回到最新回答" hidden>
+            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <path d="M8 2.5v9M4.8 8.4 8 11.6l3.2-3.2M3 13.5h10" />
+            </svg>
+            <span>回到最新</span>
+          </button>
+        </div>
 
         <div className="chat-foot">
           <div className="quick-prompts" aria-label="快捷提问">
@@ -223,11 +354,12 @@ function OverviewHero() {
               </button>
             </div>
             <p className="chat-hint" id="chatHint">
-              回车发送 · 按 <kbd>/</kbd> 聚焦输入框 · 回答基于本机账本
+              回车发送 · <kbd>/</kbd> 聚焦 · 数据仅来自本机账本
             </p>
           </form>
         </div>
       </article>
+      <div id="chatExpandPlaceholder" className="chat-expand-placeholder" hidden aria-hidden="true" />
     </section>
   );
 }
@@ -237,7 +369,15 @@ function IntelligencePanel() {
     <section className="section intelligence-panel" id="signals" aria-labelledby="signalsTitle">
       <header className="section-head">
         <div className="section-head-copy">
-          <h2 id="signalsTitle">财务智能核心</h2>
+          <div className="section-title-line">
+            <span className="section-title-mark" aria-hidden="true">
+              <svg viewBox="0 0 32 32" focusable="false">
+                <path d="M5.5 16s3.8-5.8 10.5-5.8S26.5 16 26.5 16 22.7 21.8 16 21.8 5.5 16 5.5 16Z" />
+                <circle className="section-title-node" cx="16" cy="16" r="3.1" />
+              </svg>
+            </span>
+            <h2 id="signalsTitle">关键观察</h2>
+          </div>
           <p id="coreNarrative">等待 Agent 建立当前消费画像。</p>
         </div>
         <div className="section-head-actions">
@@ -271,15 +411,16 @@ function IntelligencePanel() {
       <div className="analysis-grid">
         <article className="panel analysis-feed" aria-labelledby="analysisTitle">
           <div className="mini-heading analysis-heading">
-            <h3 id="analysisTitle">Agent 对消费行为的分析</h3>
+            <h3 id="analysisTitle">今日消费分析</h3>
             <span id="signalMeta">等待样本</span>
           </div>
+          <p className="analysis-note">每条结论都能追到原始交易，或者直接交给 Agent 展开。</p>
           <div id="decisionFeed" className="decision-feed" />
         </article>
 
         <article className="panel category-console" aria-labelledby="categoryTitle">
           <div className="mini-heading">
-            <h3 id="categoryTitle">消费场景权重</h3>
+            <h3 id="categoryTitle">支出去向</h3>
             <span id="categoryCount">--</span>
           </div>
           <div id="coreNodes" className="composition-body" />
@@ -295,8 +436,16 @@ function LedgerPanel() {
     <section className="section ledger-panel" id="ledger" aria-labelledby="ledgerTitle">
       <header className="section-head ledger-heading">
         <div className="section-head-copy">
-          <h2 id="ledgerTitle">交易流水</h2>
-          <p>每一笔账单截图都会成为 Agent 可追溯的事实节点。</p>
+          <div className="section-title-line">
+            <span className="section-title-mark" aria-hidden="true">
+              <svg viewBox="0 0 32 32" focusable="false">
+                <path d="M9 6.5h10l4 4v15l-2.6-1.9-2.4 1.9-2.4-1.9-2.4 1.9-2.4-1.9L9 25.5v-19Z" />
+                <path d="M19 6.5v4h4M12.5 15h7M12.5 19h5" />
+              </svg>
+            </span>
+            <h2 id="ledgerTitle">可追溯交易</h2>
+          </div>
+          <p>打开任意一笔，核查截图、OCR 与分类依据。</p>
         </div>
       </header>
 
@@ -329,12 +478,16 @@ function SiteFooter() {
   return (
     <footer className="site-foot">
       <p className="site-foot-note">
-        账本存放在本机 SQLite，截图与账单不会上传到第三方；只有你主动提问时才会把当期汇总发给模型。
+        <span>本地记录</span>
+        <span className="site-foot-note-separator" aria-hidden="true">/</span>
+        <span>实时分析</span>
+        <span className="site-foot-note-separator" aria-hidden="true">/</span>
+        <span>受信访问</span>
       </p>
       <p className="site-foot-meta">
         <span id="footerGenerated">快照时间 --</span>
         <span aria-hidden="true">·</span>
-        <a href="#top">回到顶部</a>
+        <a id="backToTopButton" href="#top">回到顶部</a>
       </p>
     </footer>
   );
@@ -372,9 +525,23 @@ function TrendModal() {
           <div className="trend-chart-panel">
             <div id="trendChart" className="trend-chart" />
             <div id="trendTooltip" className="trend-tooltip" role="status" hidden />
+            <ul id="trendBreakdown" className="trend-breakdown" aria-label="逐期明细，点选可高亮对应柱子" />
           </div>
 
-          <aside className="trend-budget-panel" aria-label="预算状态">
+          <aside className="trend-budget-panel" id="trendBudgetPanel" aria-label="预算状态">
+            {/* 口径行：这块预算数字算的是哪一段时间。点柱子后跟着选中的那一期走。 */}
+            <p className="budget-scope" aria-live="polite">
+              <span className="budget-scope-dot" aria-hidden="true" />
+              <span className="budget-scope-text" id="trendBudgetScopeText">
+                今日
+              </span>
+              <em className="budget-scope-state" id="trendBudgetScopeState">
+                进行中
+              </em>
+              <button className="budget-scope-reset" id="trendBudgetReset" type="button" hidden>
+                回到当前
+              </button>
+            </p>
             <div className="budget-kpi">
               <span id="trendBudgetLabel">月预算</span>
               <strong id="trendBudgetValue">--</strong>
@@ -390,7 +557,7 @@ function TrendModal() {
               </div>
             </div>
             <div className="budget-rest">
-              <span>预计结余</span>
+              <span id="trendBudgetRestLabel">还能花</span>
               <strong id="trendBudgetRemaining">--</strong>
               <div className="budget-rest-meta">
                 <span id="trendBudgetAverageLabel">日均可用</span>
@@ -533,6 +700,83 @@ function BudgetModal() {
   );
 }
 
+function EvidenceDrawer() {
+  return (
+    <div id="evidenceDrawer" className="drawer-backdrop" hidden>
+      <aside className="evidence-drawer" role="dialog" aria-modal="true" aria-labelledby="evidenceTitle" tabIndex={-1}>
+        <div className="drawer-header">
+          <div>
+            <span id="evidenceStatus" className="evidence-status">交易证据</span>
+            <h2 id="evidenceTitle">正在载入</h2>
+            <p id="evidenceSubtitle">--</p>
+          </div>
+          <button className="modal-close" type="button" data-drawer-close aria-label="关闭交易证据">
+            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <path d="M4.4 4.4 11.6 11.6M11.6 4.4 4.4 11.6" />
+            </svg>
+          </button>
+        </div>
+        <div id="evidenceContent" className="evidence-content" aria-live="polite">
+          <div className="evidence-loading">正在读取本地证据…</div>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function ProfileReportModal() {
+  return (
+    <div id="profileReportModal" className="modal-backdrop profile-report-backdrop" hidden>
+      <section className="modal-shell profile-report-shell" role="dialog" aria-modal="true" aria-labelledby="profileReportTitle" tabIndex={-1}>
+        <header className="profile-report-header">
+          <div className="profile-report-brand">
+            <BrandMark />
+            <div>
+              <h2 id="profileReportTitle">账单人格报告</h2>
+              <p id="profileReportProgress">准备生成</p>
+            </div>
+          </div>
+          <div className="profile-report-actions">
+            <button id="refreshProfileReport" className="profile-report-refresh" type="button" hidden>
+              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                <path d="M13.5 7.2A5.6 5.6 0 0 0 3.1 5.3" />
+                <path d="M2.7 2.6v3.5h3.5" />
+                <path d="M2.5 8.8a5.6 5.6 0 0 0 10.4 1.9" />
+                <path d="M13.3 13.4V9.9H9.8" />
+              </svg>
+              重新生成
+            </button>
+            <button className="modal-close" type="button" data-modal-close="profileReportModal" aria-label="关闭账单人格报告">
+              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                <path d="M4.4 4.4 11.6 11.6M11.6 4.4 4.4 11.6" />
+              </svg>
+            </button>
+          </div>
+        </header>
+
+        <div id="profileReportStale" className="profile-report-stale" hidden>
+          <span>账本有了新变化，这里展示的是上次生成的画像。</span>
+          <button id="updateProfileReport" type="button">更新画像</button>
+        </div>
+
+        <main id="profileReportViewport" className="profile-report-viewport" tabIndex={0} aria-live="polite">
+          <div id="profileReportPages" className="profile-report-pages" />
+        </main>
+
+        <footer id="profileReportNavigation" className="profile-report-navigation" hidden>
+          <button id="profileReportPrev" className="profile-report-nav-button" type="button" aria-label="上一页">
+            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M10 3.5 5.5 8 10 12.5" /></svg>
+          </button>
+          <div id="profileReportDots" className="profile-report-dots" role="tablist" aria-label="报告章节" />
+          <button id="profileReportNext" className="profile-report-nav-button" type="button" aria-label="下一页">
+            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6 3.5 10.5 8 6 12.5" /></svg>
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <>
@@ -552,6 +796,9 @@ export default function App() {
         <TrendModal />
         <SyncModal />
         <BudgetModal />
+        <ProfileReportModal />
+        <EvidenceDrawer />
+        <div id="chatExpandBackdrop" className="chat-expand-backdrop" hidden aria-hidden="true" />
         <div className="toast-region" id="toastRegion" role="status" aria-live="polite" />
       </div>
     </>

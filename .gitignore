@@ -11,6 +11,7 @@ cfo_agent_poc/data/*.sqlite-*
 cfo_agent_poc/data/backups/
 cfo_agent_poc/data/mail_attachments/
 cfo_agent_poc/data/ocr_texts/
+cfo_agent_poc/data/evidence/
 cfo_agent_poc/web_app/data.json
 
 # Local runtimes and generated dependencies
@@ -28,6 +29,14 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .vite/
+
+# QA screenshots from headless-browser checks (throwaway)
+cfo_agent_poc/web_app/qa-*.png
+
+# Agent tooling, not part of the project
+.agents/
+.claude/
+skills-lock.json
 
 # Local promo/marketing work (not part of the open-source project)
 local-tests/

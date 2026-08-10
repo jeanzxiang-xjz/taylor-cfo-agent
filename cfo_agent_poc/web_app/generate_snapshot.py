@@ -13,6 +13,11 @@ DEMO_MODE = os.environ.get("CFO_DEMO") == "1"
 OUT_PATH = Path(__file__).resolve().parent / "data.json"
 
 
+def is_demo_database() -> bool:
+    """本地免登录验证模式不等于当前读取的是演示数据库。"""
+    return DEMO_MODE and DB_PATH.name == "cfo-demo.sqlite"
+
+
 def build_payload() -> dict:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -69,7 +74,7 @@ def build_payload() -> dict:
 
     return {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
-        "demo": DEMO_MODE,
+        "demo": is_demo_database(),
         "classification_pending_count": sum(
             1 for row in rows if row["classification_status"] == "pending"
         ),

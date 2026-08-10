@@ -83,9 +83,68 @@ LOCAL_CATEGORY_RULES = (
 PERSONAL_TRANSFER_HINTS = ("向个人", "个人收款", "转账给", "个人转账", "扫二维码付款-给", "扫码付款给")
 
 
+# 二级「垂类」字典。
+#
+# 一级 LOCAL_CATEGORY_RULES 命中的是具体商户/商品词（瑞幸、大麦网、停车费），
+# 证据强，给 0.95。但中文工商名是无穷集合——「长沙湘怡文化发展有限公司」这种
+# 永远枚举不完，再怎么往一级表里加词也追不上。
+#
+# 所以二级不认商户，只认**行业词**：营业执照名称里那段说明经营范围的成分。
+# 证据弱一档，给 0.72，落库时同样是终态，但会被「待核实」挑出来让人复核。
+# 只收录行业映射足够约定俗成的词；含糊的宁可留给模型，也不要在这里猜。
+INDUSTRY_CATEGORY_RULES = (
+    ("entertainment", "文娱消费", ("文化发展", "文化传播", "文化传媒", "文化艺术", "娱乐管理", "娱乐有限", "ktv", "量贩", "歌城", "酒吧", "清吧", "livehouse", "影城", "影院", "剧院", "剧场")),
+    ("food_delivery", "餐饮", ("餐饮管理", "餐饮服务", "饮食管理", "食品经营", "餐厅", "食府", "酒楼", "茶餐厅")),
+    ("healthcare", "医疗", ("大药房", "医药连锁", "医药有限", "诊所", "口腔", "眼科", "中医馆", "卫生服务")),
+    ("education", "教育培训", ("教育科技", "教育咨询", "培训学校", "培训中心", "教育培训")),
+    ("leisure_travel", "休闲旅行", ("酒店管理", "旅业", "旅行社", "民宿管理", "健身", "瑜伽", "游泳馆", "运动管理")),
+    ("auto", "爱车养车", ("汽车服务", "汽车销售", "汽修", "车业", "汽车维修", "车服务")),
+    ("digital_services", "数字服务", ("网络科技", "信息技术", "软件技术", "数码科技", "云计算")),
+    ("general_shopping", "日常购物", ("百货", "商贸", "商业管理", "日用品", "生活馆", "美容", "美发", "理发", "足浴", "spa")),
+    ("property", "物业服务", ("物业管理", "置业管理", "房地产管理")),
+    ("transport", "交通出行", ("客运", "运输服务", "汽车客运", "网络预约出租")),
+)
+
+# 工商名里的地域前缀与组织形式后缀，匹配前先剥掉，
+# 让「长沙湘怡文化发展有限公司」能以「湘怡文化发展」去撞词。
+COMPANY_NAME_PREFIXES = (
+    "北京", "上海", "天津", "重庆", "长沙", "湖南", "广州", "深圳", "广东", "杭州", "浙江",
+    "南京", "江苏", "成都", "四川", "武汉", "湖北", "西安", "陕西", "郑州", "河南", "济南",
+    "山东", "青岛", "合肥", "安徽", "福州", "厦门", "福建", "南昌", "江西", "昆明", "云南",
+    "贵阳", "贵州", "南宁", "广西", "沈阳", "辽宁", "大连", "哈尔滨", "黑龙江", "长春", "吉林",
+    "石家庄", "河北", "太原", "山西", "兰州", "甘肃", "银川", "宁夏", "西宁", "青海",
+    "乌鲁木齐", "新疆", "呼和浩特", "内蒙古", "拉萨", "西藏", "海口", "三亚", "海南",
+)
+COMPANY_NAME_SUFFIXES = (
+    "股份有限公司", "有限责任公司", "有限公司", "分公司", "总公司", "集团", "连锁",
+    "管理有限", "服务有限", "经营部", "个体工商户", "工作室", "商行", "门店", "分店", "店",
+)
+
+
 def normalize_matching_text(*values: str | None) -> str:
     normalized = unicodedata.normalize("NFKC", "".join(value or "" for value in values))
     return re.sub(r"\s+", "", normalized).lower()
+
+
+def strip_company_noise(text: str) -> str:
+    """
+    剥掉工商名两端的地域前缀和组织形式后缀，只留下有辨识度的字号与经营范围。
+    剥完为空就退回原串——「上海」这类整名就是地名的情况不能剥没了。
+    """
+    stripped = text
+    for prefix in COMPANY_NAME_PREFIXES:
+        if stripped.startswith(prefix) and len(stripped) > len(prefix):
+            stripped = stripped[len(prefix):]
+            break
+    changed = True
+    while changed:
+        changed = False
+        for suffix in COMPANY_NAME_SUFFIXES:
+            if stripped.endswith(suffix) and len(stripped) > len(suffix):
+                stripped = stripped[: -len(suffix)]
+                changed = True
+                break
+    return stripped or text
 
 
 def resolved_result(category: str, thing: str, hint: str) -> ClassificationResult:
@@ -99,6 +158,18 @@ def resolved_result(category: str, thing: str, hint: str) -> ClassificationResul
     )
 
 
+def industry_result(category: str, thing: str, hint: str) -> ClassificationResult:
+    """行业词命中：同样是终态，但置信度低一档，好让「待核实」把它挑出来复核。"""
+    return ClassificationResult(
+        category=category,
+        thing=thing,
+        confidence=0.72,
+        source="local_industry",
+        status="resolved",
+        reason=f"local_industry:{category}:{hint}",
+    )
+
+
 def classify_locally(
     *,
     merchant: str | None,
@@ -109,16 +180,26 @@ def classify_locally(
 ) -> ClassificationResult:
     structured_text = normalize_matching_text(merchant, product)
     raw_text = normalize_matching_text(text)
+    # 剥掉「长沙…有限公司」这类外壳后再撞一次，一级词也能多命中一批
+    core_text = strip_company_noise(normalize_matching_text(merchant)) + normalize_matching_text(product)
 
     for category, thing, hints in LOCAL_CATEGORY_RULES:
         for hint in hints:
-            if hint.lower() in structured_text:
+            lowered = hint.lower()
+            if lowered in structured_text or lowered in core_text:
                 return resolved_result(category, thing, hint)
 
     for hint in PERSONAL_TRANSFER_HINTS:
         normalized_hint = normalize_matching_text(hint)
         if normalized_hint in structured_text or normalized_hint in raw_text:
             return resolved_result("personal_transfer", "个人转账", hint)
+
+    # 一级词没中，再拿行业词兜一层，避免直接掉进 pending 等模型
+    for category, thing, hints in INDUSTRY_CATEGORY_RULES:
+        for hint in hints:
+            lowered = hint.lower()
+            if lowered in structured_text or lowered in core_text:
+                return industry_result(category, thing, hint)
 
     return ClassificationResult(
         category="uncategorized",

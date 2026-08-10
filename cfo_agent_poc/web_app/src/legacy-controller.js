@@ -44,6 +44,11 @@ const paymentAppNames = {
   alipay: "支付宝",
 };
 
+const chatAvatarAssets = {
+  user: new URL("../assets/avatar-user.png", import.meta.url).href,
+  agent: new URL("../assets/avatar-cfo.png", import.meta.url).href,
+};
+
 // 类别色板只服务于数据编码（构成条、权重条、流水色点），不参与界面配色。
 // 同一个分类在所有视图里必须是同一个颜色，所以用 key 的稳定哈希取色。
 const CATEGORY_PALETTE = [
@@ -70,9 +75,9 @@ const ledgerPageSize = 10;
 const primaryLedgerCategories = ["all", "books", "food_delivery", "groceries", "property", "car_charging"];
 const budgetStorageKey = "ericCfoBudgets";
 const defaultBudgets = {
-  day: 300,
-  week: 2000,
-  month: 12000,
+  day: 100,
+  week: 700,
+  month: 3000,
 };
 
 const ICONS = {
@@ -101,6 +106,9 @@ let state = {
   generatedAt: null,
   period: "today",
   filter: "all",
+  merchantFocus: "",
+  // 从趋势明细格跳过来的时间区间 { start, end, label }。设了它就不再叠顶部周期。
+  dateRange: null,
   ledgerFilterExpanded: false,
   ledgerPage: 1,
   chatHistory: [],
@@ -109,12 +117,77 @@ let state = {
   budgets: loadBudgetConfig(),
   trendMode: "day",
   activeTrendSeries: [],
+  trendSelected: null,
   classificationPendingCount: 0,
+  activeEvidenceUid: null,
+  returnFocusElement: null,
+  chatExpanded: false,
+  chatReturnFocusElement: null,
+  chatReturnScrollPosition: null,
+  chatTransitionCancel: null,
+  profileReport: null,
+  profileReportStale: false,
+  profileReportBusy: false,
+  profileReportIndex: 0,
+  profileReportPageCount: 0,
+  profileReportStageTimer: null,
+  profileReportScrollFrame: null,
   hasLoaded: false,
 };
 
 function $(id) {
   return document.getElementById(id);
+}
+
+const reducedMotionQuery = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+const transitionWatchers = new WeakMap();
+
+function prefersReducedMotion() {
+  return Boolean(reducedMotionQuery?.matches);
+}
+
+/**
+ * 以真实的 transitionend 作为状态清理时机；fallback 只防止节点被替换、
+ * 浏览器丢失事件等异常路径，不再承担视觉节奏。
+ */
+function afterTransition(element, callback, options = {}) {
+  if (!element) {
+    callback();
+    return () => {};
+  }
+
+  transitionWatchers.get(element)?.();
+  let settled = false;
+  let fallbackTimer = 0;
+  const property = options.property || "transform";
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+    window.clearTimeout(fallbackTimer);
+    element.removeEventListener("transitionend", handleEnd);
+    transitionWatchers.delete(element);
+    callback();
+  };
+  const cancel = () => {
+    if (settled) return;
+    settled = true;
+    window.clearTimeout(fallbackTimer);
+    element.removeEventListener("transitionend", handleEnd);
+    transitionWatchers.delete(element);
+  };
+  const handleEnd = (event) => {
+    if (event.target === element && (!property || event.propertyName === property)) finish();
+  };
+
+  transitionWatchers.set(element, cancel);
+  if (prefersReducedMotion()) {
+    requestAnimationFrame(finish);
+    return cancel;
+  }
+
+  element.addEventListener("transitionend", handleEnd);
+  fallbackTimer = window.setTimeout(finish, options.fallback ?? 480);
+  return cancel;
 }
 
 function escapeHtml(value) {
@@ -128,6 +201,14 @@ function escapeHtml(value) {
     };
     return map[char];
   });
+}
+
+function recoveryMessage(error, action) {
+  const message = String(error?.message || "").trim();
+  if (error instanceof TypeError || /Failed to fetch|NetworkError|fetch/i.test(message)) {
+    return `${action}失败，请确认本地服务仍在运行后重试。`;
+  }
+  return message || `${action}失败，请稍后重试。`;
 }
 
 function renderInlineMarkdown(value) {
@@ -275,63 +356,28 @@ function renderMarkdown(text) {
   return blocks.join("");
 }
 
-const SPLIT_MAX_CHARS = 40;
-
 /**
- * 只给回答的前 40 个字做浮现，长答案直接整段显示。
- * 旧版本对整段逐字建 span（最长 90 字 × 18ms ≈ 1.6s），读起来是负担。
+ * 回答完成后只确认一次“结果已到达”，不再拆字等待。
+ * Markdown、表格和长段落保持完整排版，避免逐字动画拖慢阅读。
  */
 function animateSplitText(node) {
-  if (!node || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
-  if ((node.textContent || "").length > 600) return;
-
-  const skipTags = new Set(["A", "CODE", "PRE", "SCRIPT", "STYLE", "TABLE", "TBODY", "TD", "TFOOT", "TH", "THEAD", "TR"]);
-  const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, {
-    acceptNode(textNode) {
-      if (!textNode.nodeValue?.trim()) return NodeFilter.FILTER_REJECT;
-      let parent = textNode.parentElement;
-      while (parent && parent !== node) {
-        if (skipTags.has(parent.tagName)) return NodeFilter.FILTER_REJECT;
-        parent = parent.parentElement;
-      }
-      return NodeFilter.FILTER_ACCEPT;
-    },
+  if (!node || prefersReducedMotion()) return;
+  node.classList.remove("answer-result-in");
+  requestAnimationFrame(() => {
+    node.classList.add("answer-result-in");
+    node.addEventListener("animationend", () => node.classList.remove("answer-result-in"), { once: true });
   });
-  const textNodes = [];
-  while (walker.nextNode()) textNodes.push(walker.currentNode);
-
-  let index = 0;
-  textNodes.forEach((textNode) => {
-    if (index >= SPLIT_MAX_CHARS) return;
-    const fragment = document.createDocumentFragment();
-    Array.from(textNode.nodeValue).forEach((char) => {
-      if (/\s/.test(char) || index >= SPLIT_MAX_CHARS) {
-        fragment.appendChild(document.createTextNode(char));
-        if (!/\s/.test(char)) index += 1;
-        return;
-      }
-      const span = document.createElement("span");
-      span.className = "split-answer-char";
-      span.style.setProperty("--split-index", String(index));
-      span.textContent = char;
-      fragment.appendChild(span);
-      index += 1;
-    });
-    textNode.replaceWith(fragment);
-  });
-
-  if (index > 0) node.classList.add("split-answer-active");
 }
 
 function setMessageContent(node, role, text, options = {}) {
   if (role === "agent") {
     node.classList.add("markdown-message");
-    node.classList.remove("split-answer-active");
+    node.classList.remove("answer-result-in");
     node.innerHTML = renderMarkdown(text);
     if (options.split) animateSplitText(node);
     return;
   }
-  node.classList.remove("split-answer-active");
+  node.classList.remove("answer-result-in");
   node.textContent = text;
   if (options.split) animateSplitText(node);
 }
@@ -368,13 +414,8 @@ function inSameWeek(date, anchor) {
 }
 
 function getAnchorDate() {
-  const dates = state.transactions
-    .map((tx) => parseDate(tx.paid_at))
-    .filter((date) => !Number.isNaN(date.getTime()))
-    .sort((a, b) => b - a);
-
-  if (dates.length) return dates[0];
-  if (state.generatedAt) return parseDate(state.generatedAt);
+  // 统计口径以用户当前本地时间为准，不能停在最后一笔交易或快照时间。
+  // 这样跨过 00:00 后，今日会自然切换到新的一天。
   return new Date();
 }
 
@@ -417,6 +458,7 @@ function scopedTransactions(period = state.period) {
   return state.transactions.filter((tx) => {
     const paidAt = parseDate(tx.paid_at);
     if (Number.isNaN(paidAt.getTime())) return false;
+    if (paidAt > anchor) return false;
     if (period === "today") return sameDay(paidAt, anchor);
     if (period === "week") return inSameWeek(paidAt, anchor);
     if (period === "month") return inSameMonth(paidAt, anchor);
@@ -425,9 +467,10 @@ function scopedTransactions(period = state.period) {
 }
 
 function transactionsBetween(start, end) {
+  const anchor = getAnchorDate();
   return state.transactions.filter((tx) => {
     const paidAt = parseDate(tx.paid_at);
-    return !Number.isNaN(paidAt.getTime()) && paidAt >= start && paidAt < end;
+    return !Number.isNaN(paidAt.getTime()) && paidAt >= start && paidAt < end && paidAt <= anchor;
   });
 }
 
@@ -451,6 +494,38 @@ function topCategory(transactions) {
 
 function largest(transactions) {
   return [...transactions].sort((a, b) => positiveSpend(b) - positiveSpend(a))[0] || null;
+}
+
+/** 商户名做归并键：商户缺失时退回商品名，都没有就当作无法归并。 */
+function merchantKey(tx) {
+  return (tx.merchant || tx.product || "").trim();
+}
+
+/** 按商户聚合，只保留能归并的交易。 */
+function groupByMerchant(transactions) {
+  return transactions.reduce((acc, tx) => {
+    const key = merchantKey(tx);
+    if (!key) return acc;
+    if (!acc[key]) acc[key] = { amount: 0, count: 0, latest: null, category: tx.category || "uncategorized" };
+    acc[key].amount += positiveSpend(tx);
+    acc[key].count += 1;
+    const paidAt = parseDate(tx.paid_at);
+    if (!Number.isNaN(paidAt.getTime()) && (!acc[key].latest || paidAt > acc[key].latest)) acc[key].latest = paidAt;
+    return acc;
+  }, {});
+}
+
+/** 按自然日聚合支出，用于找出周期内花得最狠的一天。 */
+function groupByDay(transactions) {
+  return transactions.reduce((acc, tx) => {
+    const paidAt = parseDate(tx.paid_at);
+    if (Number.isNaN(paidAt.getTime())) return acc;
+    const key = dateKey(paidAt);
+    if (!acc[key]) acc[key] = { amount: 0, count: 0, date: startOfDay(paidAt) };
+    acc[key].amount += positiveSpend(tx);
+    acc[key].count += 1;
+    return acc;
+  }, {});
 }
 
 function averageConfidence(transactions) {
@@ -492,6 +567,13 @@ function periodLabel(period = state.period) {
   if (period === "week") return "本周";
   if (period === "month") return "本月";
   return "全部";
+}
+
+function consumptionAnalysisTitle(period = state.period) {
+  if (period === "today") return "今日消费分析";
+  if (period === "week") return "本周消费分析";
+  if (period === "month") return "本月消费分析";
+  return "整体消费分析";
 }
 
 // 快捷提问模板：文字随顶部选中的时段变化，避免提问时间词与所选时段语义不匹配。
@@ -565,6 +647,21 @@ function paymentLabel(app) {
   return paymentAppNames[app] || app || "未知渠道";
 }
 
+function evidenceSourceLabel(value) {
+  const labels = {
+    rule: "规则分类",
+    llm: "Agent 分类",
+    manual: "手动修正",
+    legacy: "历史字段",
+    none: "尚未分类",
+  };
+  return labels[value] || value || "未记录";
+}
+
+function evidenceField(label, value) {
+  return `<div class="evidence-field"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value ?? "未识别")}</strong></div>`;
+}
+
 function categorySummary(transactions) {
   const top = topCategory(transactions);
   if (!top) return "暂无场景";
@@ -596,9 +693,14 @@ function budgetKeyForPeriod(period = state.period) {
   return null;
 }
 
+/** 顶部周期 → 趋势刻度。「全部」是历史累计，月度是最接近的粒度。 */
+function trendModeForPeriod(period = state.period) {
+  return budgetKeyForPeriod(period) || "month";
+}
+
 function trendModeTitle(mode = state.trendMode) {
   if (mode === "day") return "近7天每日支出";
-  if (mode === "week") return "本月周度支出";
+  if (mode === "week") return "上月至今周度支出";
   return "本年月度支出";
 }
 
@@ -622,24 +724,33 @@ function trendSeries(mode = state.trendMode) {
         label: formatShortDate(start),
         title: `${start.getMonth() + 1}月${start.getDate()}日`,
         amount: sumBetween(start, end),
+        // 起止随序列一起带出去，明细格的「查看这段交易」要用它筛账本
+        start,
+        end,
         current: index === 6,
       };
     });
   }
 
   if (mode === "week") {
-    const monthStart = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
-    const monthEnd = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
+    const previousMonthStart = new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1);
     const series = [];
-    let cursor = monthStart;
+    // 从「上月 1 号所在自然周的周一」一路展示到当前周。
+    // 起止都遵循周一至周日的完整自然周口径，避免首周被月界硬切后，
+    // 用不足 7 天的数据和完整周预算比较。
+    let cursor = startOfWeek(previousMonthStart);
 
-    while (cursor <= anchor && cursor <= monthEnd) {
-      const endDate = new Date(Math.min(weekEndFor(cursor), monthEnd));
+    while (cursor <= anchor) {
+      const endDate = weekEndFor(cursor);
       const end = addDays(startOfDay(endDate), 1);
       series.push({
-        label: `第${series.length + 1}周`,
+        // 跨了两个月，「第 N 周」是「哪个月的第 N 周」说不清，改用周起始日。
+        // 完整区间在下方明细格和 tooltip 里给（title 字段），轴上只要能对上号。
+        label: formatShortDate(cursor),
         title: `${formatShortDate(cursor)}-${formatShortDate(endDate)}`,
         amount: sumBetween(cursor, end),
+        start: cursor,
+        end,
       });
       cursor = end;
     }
@@ -655,6 +766,8 @@ function trendSeries(mode = state.trendMode) {
       label: `${cursor.getMonth() + 1}月`,
       title: `${cursor.getFullYear()}年${cursor.getMonth() + 1}月`,
       amount: sumBetween(cursor, end),
+      start: cursor,
+      end,
     });
   }
   if (series.length) series[series.length - 1].current = true;
@@ -699,7 +812,8 @@ function elapsedDaysInPeriod(period = state.period) {
 
 /**
  * 环比基准。今日不和「昨天一整天」比（口径不对等），
- * 而是和最近 7 天（不含今天）的日均比，标签也写清楚。
+ * 而是和最近 7 天（不含今天）的日均比；周/月则比较上一周期的同期区间，
+ * 避免当前周期尚未结束时拿累计值和完整周期硬比。
  */
 function comparisonBaseline(period = state.period) {
   const anchor = startOfDay(getAnchorDate());
@@ -709,18 +823,34 @@ function comparisonBaseline(period = state.period) {
   }
   if (period === "week") {
     const start = startOfWeek(anchor);
-    return { label: "较上周", value: sumBetween(addDays(start, -7), start) };
+    const elapsedDays = Math.max(1, Math.round((anchor - start) / 86400000) + 1);
+    const previousStart = addDays(start, -7);
+    return {
+      label: "较上周同期",
+      value: sumBetween(previousStart, addDays(previousStart, elapsedDays)),
+    };
   }
   if (period === "month") {
     const start = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
-    return { label: "较上月", value: sumBetween(addMonths(start, -1), start) };
+    const elapsedDays = Math.max(1, Math.round((anchor - start) / 86400000) + 1);
+    const previousStart = addMonths(start, -1);
+    const previousMonthDays = new Date(
+      previousStart.getFullYear(),
+      previousStart.getMonth() + 1,
+      0,
+    ).getDate();
+    const comparableDays = Math.min(elapsedDays, previousMonthDays);
+    return {
+      label: "较上月同期",
+      value: sumBetween(previousStart, addDays(previousStart, comparableDays)),
+    };
   }
   return null;
 }
 
 function trendSubtitle(mode = state.trendMode) {
   if (mode === "day") return "近 7 天每日支出，虚线是日预算。";
-  if (mode === "week") return "本月第一周到当前周，虚线是周预算。";
+  if (mode === "week") return "上月至今周度支出，虚线是周预算。";
   return "本年第一月到当前月，虚线是月预算。";
 }
 
@@ -791,11 +921,11 @@ function trendChartSvg(series, mode) {
       if (point.current) classes.push("is-current");
       const description = `${point.title}，${formatMoney(point.amount)}${point.overBudget ? `，超出${point.budgetLabel}${formatMoney(point.overBy)}` : ""}`;
       return `
-        <g class="trend-slot" data-trend-index="${index}" tabindex="0" role="button" aria-label="${escapeHtml(description)}">
+        <g class="trend-slot" data-trend-index="${index}" tabindex="0" role="button" aria-pressed="false" aria-label="${escapeHtml(description)}">
           <rect class="trend-hit-zone" data-trend-index="${index}" x="${(x - band / 2).toFixed(1)}" y="${padding.top}" width="${band.toFixed(1)}" height="${chartHeight}"></rect>
           <rect class="${classes.join(" ")}" data-trend-index="${index}" x="${(x - colWidth / 2).toFixed(1)}" y="${(baseY - barHeight).toFixed(1)}" width="${colWidth.toFixed(1)}" height="${barHeight.toFixed(1)}" rx="3"></rect>
         </g>
-        <text class="trend-axis-label${point.current ? " is-current" : ""}" x="${x.toFixed(1)}" y="${height - 12}" text-anchor="middle">${escapeHtml(point.label)}</text>
+        <text class="trend-axis-label${point.current ? " is-current" : ""}" data-trend-index="${index}" x="${x.toFixed(1)}" y="${height - 12}" text-anchor="middle">${escapeHtml(point.label)}</text>
       `;
     })
     .join("");
@@ -809,30 +939,210 @@ function trendChartSvg(series, mode) {
   `;
 }
 
+/**
+ * 图表下方的逐期明细。刻意只给三件事：哪一期、花了多少、有没有超预算。
+ * 合计 / 均值 / 峰值这类派生指标不放这儿，属于外围模块的事。
+ * 每格是个真按钮：点一下会把上面对应的柱子点亮，所以不能是 <li> 纯文本。
+ */
+function renderTrendBreakdown(series, mode) {
+  const budget = state.budgets[mode] || 0;
+
+  $("trendBreakdown").innerHTML = series
+    .map((item, index) => {
+      const amount = Math.max(item.amount, 0);
+      const note = budget <= 0 ? "未设预算" : item.overBudget ? `超出 ${formatMoney(item.overBy)}` : "未超预算";
+      const classes = ["trend-cell"];
+      if (item.overBudget) classes.push("is-over");
+      if (item.current) classes.push("is-current");
+      if (amount <= 0) classes.push("is-empty");
+
+      // 格子本身已经是 button（承载点选高亮），箭头不能嵌在里面，
+      // 只能并列成兄弟节点；选中/悬停的底色因此挂到外层 li 上。
+      return `
+        <li class="${classes.join(" ")}">
+          <button
+            class="trend-cell-body"
+            type="button"
+            data-trend-index="${index}"
+            aria-pressed="false"
+            aria-label="高亮 ${escapeHtml(item.title)} 对应的柱子，${escapeHtml(formatMoney(amount))}，${escapeHtml(note)}"
+          >
+            <span class="trend-cell-label">
+              ${escapeHtml(item.title)}
+              ${item.current ? '<em class="trend-cell-flag">当前</em>' : ""}
+            </span>
+            <strong class="trend-cell-amount">${escapeHtml(formatMoney(amount))}</strong>
+            <small class="trend-cell-note">${escapeHtml(note)}</small>
+          </button>
+          <button
+            class="trend-cell-jump"
+            type="button"
+            data-trend-jump="${index}"
+            title="查看这段时间的交易"
+            aria-label="查看 ${escapeHtml(item.title)} 的交易明细"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6 3.5 10.5 8 6 12.5" /></svg>
+          </button>
+        </li>
+      `;
+    })
+    .join("");
+}
+
+/** 当前那一期在序列里的下标（日刻度是最后一根；周/月同理）。 */
+function currentTrendIndex() {
+  const index = state.activeTrendSeries.findIndex((item) => item.current);
+  return index >= 0 ? index : null;
+}
+
+/**
+ * 点选联动：明细格和柱子是同一期数据的两种画法，选中一格另一边必须跟着亮。
+ * 这是点击态，不是悬停态——鼠标扫过时依旧什么都不发生（上次去掉悬停联动的结论）。
+ *
+ * 总有一根柱子是选中的：取消（再点同一格 / 点空白处 / 传 null）一律落回当前那一期，
+ * 而不是回到「什么都没选」——右栏永远在算某一期的数，图上就该有对应的高亮。
+ *
+ * 压暗其余柱子只在「看的不是当前期」时才开：那时才需要一眼定位点的是哪一根；
+ * 默认停在当前期时图表保持全亮，趋势本身才读得出来。这条规则和「回到当前」
+ * 按钮的显隐是同一个判据，两者同进同退。
+ */
+function setTrendSelection(index) {
+  const fallback = currentTrendIndex();
+  const toggled = index === null || index === state.trendSelected ? null : index;
+  const next = toggled === null ? fallback : toggled;
+  state.trendSelected = next;
+
+  const atCurrent = next === null || next === fallback;
+  const chart = $("trendChart");
+  chart.classList.toggle("has-selection", !atCurrent);
+  chart.querySelectorAll("[data-trend-index]").forEach((node) => {
+    const active = Number(node.dataset.trendIndex) === next;
+    node.classList.toggle("is-selected", active);
+    if (node.classList.contains("trend-slot")) node.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+
+  // 选中态挂在外层 li（整张卡变色），aria-pressed 挂在里面那个真按钮上
+  $("trendBreakdown")
+    .querySelectorAll(".trend-cell-body")
+    .forEach((body) => {
+      const active = Number(body.dataset.trendIndex) === next;
+      body.closest(".trend-cell")?.classList.toggle("is-selected", active);
+      body.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+
+  // 右侧预算区是同一份选中态的第三种画法：柱子亮了，数字也要跟着换口径。
+  renderTrendBudgetPanel();
+  // 只有翻看别的一期才滚动，否则弹窗一打开就会在窄屏上自己动一下。
+  if (!atCurrent) revealBudgetPanel();
+}
+
+/**
+ * 窄屏下预算区被挤到图表下方，点了柱子却什么都看不见。
+ * 只在它整块落在视口外时才滚，且用 nearest —— 已经看得见就不要动画面。
+ */
+function revealBudgetPanel() {
+  const panel = $("trendBudgetPanel");
+  if (!panel) return;
+  const rect = panel.getBoundingClientRect();
+  if (rect.top < window.innerHeight - 72 && rect.bottom > 0) return;
+  panel.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "nearest" });
+}
+
+/** 数值换了才动一下，同一个值反复写不该闪。 */
+function swapText(node, text) {
+  if (!node) return;
+  const next = String(text);
+  if (node.textContent === next) return;
+  node.textContent = next;
+  if (prefersReducedMotion()) return;
+  node.animate?.(
+    [
+      { opacity: 0, transform: "translateY(4px)" },
+      { opacity: 1, transform: "none" },
+    ],
+    { duration: 200, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
+  );
+}
+
+function trendSpendLabel(mode = state.trendMode) {
+  if (mode === "day") return "当日支出";
+  if (mode === "week") return "当周支出";
+  return "当月支出";
+}
+
+function trendScopeText(mode = state.trendMode) {
+  if (mode === "day") return "今日";
+  if (mode === "week") return "本周";
+  return "本月";
+}
+
+/**
+ * 预算区跟着选中的柱子走，数字一律取那根柱子的值——右栏和图上被高亮的那一期
+ * 必须是同一个数（周刻度跨月时，序列里的当周和 currentBudgetSpend 本来就可能不等，
+ * 以图表为准）。停在当前那一期是默认态，翻看别的一期才算「查看中」：
+ * 玉色边框、「回到当前」按钮、底部那行换成实际支出，都用这个判据。
+ *
+ * 结余那一格的标题先判超支：超了一律「超出预算」，不分时态；没超再看时态，
+ * 还在进行中的说「还能花」（用户此刻真正要问的是还能花多少），
+ * 已经过去的那一期是既成事实，叫「结余」。时态本身由上方口径行的胶囊承担。
+ * 底部那行也从「日均可用」换成那一期的实际支出——对已完成的区间来说，
+ * 日均可用没有意义。
+ */
+function renderTrendBudgetPanel() {
+  const mode = state.trendMode;
+  const budget = state.budgets[mode] || 0;
+  const index = state.trendSelected;
+  const item = index === null ? null : state.activeTrendSeries[index] || null;
+  // 停在当前那一期 = 默认态，它同时也是唯一还在进行中的那一期；
+  // 翻看别的一期 = 查看中，那一期已经走完。
+  const ongoing = item ? Boolean(item.current) : true;
+  const inspecting = Boolean(item) && !ongoing;
+  const spend = item ? Math.max(item.amount, 0) : currentBudgetSpend(mode);
+  const hasBudget = budget > 0;
+  const usage = hasBudget ? Math.round((spend / budget) * 100) : null;
+  const remaining = budget - spend;
+  const average = remaining / remainingBudgetDays(mode);
+
+  $("trendBudgetPanel").classList.toggle("is-inspecting", inspecting);
+  swapText($("trendBudgetScopeText"), inspecting ? item.title : trendScopeText(mode));
+  swapText($("trendBudgetScopeState"), ongoing ? "进行中" : "已完成");
+  $("trendBudgetReset").hidden = !inspecting;
+
+  swapText($("trendBudgetLabel"), budgetLabel(mode));
+  swapText($("trendBudgetValue"), formatMoney(budget));
+  swapText($("trendBudgetPercent"), hasBudget ? `${usage}%` : "--");
+  // 「结余 -¥265」是句病句：超了就直说超了多少，符号和标签不该互相打架。
+  const over = hasBudget && remaining < 0;
+  const restLabel = over ? "超出预算" : ongoing ? "还能花" : "结余";
+  swapText($("trendBudgetRestLabel"), restLabel);
+  swapText($("trendBudgetRemaining"), hasBudget ? formatMoney(Math.abs(remaining)) : "--");
+
+  if (inspecting) {
+    swapText($("trendBudgetAverageLabel"), trendSpendLabel(mode));
+    swapText($("trendBudgetAverage"), formatMoney(spend));
+  } else {
+    swapText($("trendBudgetAverageLabel"), mode === "day" ? "计算口径" : "日均可用");
+    swapText($("trendBudgetAverage"), mode === "day" ? "按今日消费计算" : formatMoney(average));
+  }
+
+  const progress = $("trendBudgetProgress");
+  progress.style.setProperty("--meter-ratio", String(clamp(usage || 0, 0, 100) / 100));
+  const meter = progress.closest(".meter");
+  if (meter) meter.dataset.level = !hasBudget ? "ok" : usage > 100 ? "over" : usage >= 80 ? "warn" : "ok";
+  $("trendBudgetRemaining").closest(".budget-rest")?.classList.toggle("is-negative", over);
+}
+
 function renderTrendModal() {
   const mode = state.trendMode;
   const series = annotateTrendSeries(trendSeries(mode), mode);
   state.activeTrendSeries = series;
-  const spend = currentBudgetSpend(mode);
-  const budget = state.budgets[mode] || 0;
-  const usage = budget > 0 ? Math.round((spend / budget) * 100) : 0;
-  const remaining = budget - spend;
-  const average = remaining / remainingBudgetDays(mode);
 
   $("trendSubtitle").textContent = trendSubtitle(mode);
   $("trendChart").innerHTML = trendChartSvg(series, mode);
-  $("trendBudgetLabel").textContent = budgetLabel(mode);
-  $("trendBudgetValue").textContent = formatMoney(budget);
-  $("trendBudgetPercent").textContent = `${usage}%`;
-  $("trendBudgetRemaining").textContent = formatMoney(remaining);
-  $("trendBudgetAverageLabel").textContent = mode === "day" ? "计算口径" : "日均可用";
-  $("trendBudgetAverage").textContent = mode === "day" ? "按今日消费计算" : formatMoney(average);
-
-  const progress = $("trendBudgetProgress");
-  progress.style.width = `${clamp(usage, 0, 100)}%`;
-  const meter = progress.closest(".meter");
-  if (meter) meter.dataset.level = usage > 100 ? "over" : usage >= 80 ? "warn" : "ok";
-  $("trendBudgetRemaining").closest(".budget-rest")?.classList.toggle("is-negative", remaining < 0);
+  renderTrendBreakdown(series, mode);
+  // 换口径后同一个序号指的是另一段时间，选中态不能沿用；预算区也随之回到当前周期。
+  state.trendSelected = null;
+  setTrendSelection(null);
 
   document.querySelectorAll("[data-trend-mode]").forEach((button) => {
     const active = button.dataset.trendMode === mode;
@@ -868,6 +1178,13 @@ function saveBudgets(budgets) {
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 const modalReturnFocus = new Map();
 
+function syncModalPageLock() {
+  const hasOpenLayer = ["profileReportModal", "trendModal", "budgetModal", "syncModal", "evidenceDrawer"]
+    .map($)
+    .some((layer) => layer && !layer.hidden);
+  document.body.classList.toggle("modal-open", hasOpenLayer);
+}
+
 function focusableIn(modal) {
   return Array.from(modal.querySelectorAll(FOCUSABLE)).filter((node) => node.offsetParent !== null || node === document.activeElement);
 }
@@ -875,30 +1192,36 @@ function focusableIn(modal) {
 function openModal(id) {
   const modal = $(id);
   if (!modal || modal.classList.contains("modal-visible")) return;
+  const shell = modal.querySelector(".modal-shell");
+  transitionWatchers.get(shell)?.();
   modalReturnFocus.set(id, document.activeElement);
   modal.hidden = false;
-  document.body.classList.add("modal-open");
+  syncModalPageLock();
   if (id === "trendModal") renderTrendModal();
   if (id === "budgetModal") renderBudgetForm();
   if (id === "syncModal") resetSyncModal();
+  if (id === "profileReportModal") loadProfileReportForModal();
   requestAnimationFrame(() => {
     modal.classList.add("modal-visible");
-    const first = focusableIn(modal).find((node) => !node.classList.contains("modal-close")) || modal.querySelector(".modal-close");
-    first?.focus({ preventScroll: true });
+    if (id === "profileReportModal") {
+      shell?.focus({ preventScroll: true });
+    } else {
+      const first = focusableIn(modal).find((node) => !node.classList.contains("modal-close")) || modal.querySelector(".modal-close");
+      first?.focus({ preventScroll: true });
+    }
   });
 }
 
 function closeModal(id) {
   const modal = $(id);
   if (!modal || modal.hidden) return;
-  modal.classList.remove("modal-visible");
-  window.setTimeout(() => {
+  const shell = modal.querySelector(".modal-shell");
+  afterTransition(shell, () => {
     if (modal.classList.contains("modal-visible")) return;
     modal.hidden = true;
-    if ($("trendModal").hidden && $("budgetModal").hidden && $("syncModal").hidden) {
-      document.body.classList.remove("modal-open");
-    }
-  }, 360);
+    syncModalPageLock();
+  }, { fallback: 300 });
+  modal.classList.remove("modal-visible");
   $("trendTooltip").hidden = true;
 
   const trigger = modalReturnFocus.get(id);
@@ -907,12 +1230,20 @@ function closeModal(id) {
 }
 
 function topmostOpenModal() {
-  return ["budgetModal", "syncModal", "trendModal"].map($).find((modal) => modal && !modal.hidden) || null;
+  return ["profileReportModal", "budgetModal", "syncModal", "trendModal"].map($).find((modal) => modal && !modal.hidden) || null;
+}
+
+function topmostOpenLayer() {
+  return [
+    $("evidenceDrawer"),
+    topmostOpenModal(),
+    state.chatExpanded ? $("heroChat") : null,
+  ].find((layer) => layer && !layer.hidden) || null;
 }
 
 function trapFocus(event) {
   if (event.key !== "Tab") return;
-  const modal = topmostOpenModal();
+  const modal = topmostOpenLayer();
   if (!modal) return;
   const nodes = focusableIn(modal);
   if (!nodes.length) return;
@@ -930,6 +1261,96 @@ function trapFocus(event) {
   }
 }
 
+function renderEvidence(payload) {
+  const tx = payload.transaction || {};
+  const warnings = Array.isArray(payload.parse_warnings) ? payload.parse_warnings : [];
+  $("evidenceStatus").textContent = tx.classification_status === "pending" ? "等待分类" : "证据完整";
+  $("evidenceTitle").textContent = tx.merchant || tx.product || "未知商户";
+  $("evidenceSubtitle").textContent = `${displayDate(tx.paid_at)} · ${formatMoney(tx.amount)}`;
+  $("evidenceContent").innerHTML = `
+    <section class="evidence-section" aria-labelledby="captureHeading">
+      <h3 id="captureHeading">原始账单</h3>
+      <div class="evidence-image-frame">
+        ${payload.image_url
+          ? `<img src="${escapeHtml(payload.image_url)}" alt="${escapeHtml(tx.merchant || "交易")}的原始账单截图" />`
+          : `<div class="evidence-unavailable">这笔记录没有可用截图。交易字段仍可通过 OCR 文本核查。</div>`}
+      </div>
+    </section>
+    <section class="evidence-section" aria-labelledby="parsedHeading">
+      <h3 id="parsedHeading">解析字段</h3>
+      <div class="evidence-grid">
+        ${evidenceField("金额", formatMoney(tx.amount))}
+        ${evidenceField("交易时间", displayDateTime(tx.paid_at))}
+        ${evidenceField("商户", tx.merchant || tx.platform)}
+        ${evidenceField("消费内容", tx.thing || tx.product)}
+        ${evidenceField("分类", categoryLabel(tx.category))}
+        ${evidenceField("支付渠道", paymentLabel(tx.payment_app))}
+        ${evidenceField("支付方式", tx.payment_method)}
+        ${evidenceField("卡片尾号", tx.card_last4 ? `•••• ${tx.card_last4}` : null)}
+      </div>
+    </section>
+    <section class="evidence-section" aria-labelledby="basisHeading">
+      <h3 id="basisHeading">识别依据</h3>
+      <div class="evidence-grid">
+        ${evidenceField("OCR 解析可信度", Number.isFinite(Number(tx.confidence)) ? `${Math.round(Number(tx.confidence) * 100)}%` : null)}
+        ${evidenceField("分类来源", evidenceSourceLabel(tx.classification_source))}
+        ${evidenceField("分类可信度", Number(tx.classification_confidence) > 0 ? `${Math.round(Number(tx.classification_confidence) * 100)}%` : "未提供")}
+        ${evidenceField("交易编号", tx.transaction_uid)}
+      </div>
+      ${warnings.length ? `<div class="evidence-error"><strong>解析提醒</strong>${warnings.map((warning) => `<div>${escapeHtml(warning)}</div>`).join("")}</div>` : `<div class="evidence-note">没有发现解析警告。分类只使用结构化字段，不会把原始 OCR 文本发送给 DeepSeek。</div>`}
+    </section>
+    <section class="evidence-section" aria-labelledby="ocrHeading">
+      <h3 id="ocrHeading">OCR 原文</h3>
+      <pre class="ocr-text">${escapeHtml(payload.ocr_text || "没有保存 OCR 文本。")}</pre>
+    </section>
+  `;
+}
+
+async function openEvidence(transactionUid) {
+  if (!transactionUid) return;
+  state.activeEvidenceUid = transactionUid;
+  state.returnFocusElement = document.activeElement;
+  const drawer = $("evidenceDrawer");
+  transitionWatchers.get(drawer.querySelector(".evidence-drawer"))?.();
+  const localTx = state.transactions.find((tx) => tx.transaction_uid === transactionUid);
+  $("evidenceStatus").textContent = "交易证据";
+  $("evidenceTitle").textContent = localTx?.merchant || localTx?.product || "正在载入";
+  $("evidenceSubtitle").textContent = localTx ? `${displayDate(localTx.paid_at)} · ${formatMoney(localTx.amount)}` : "--";
+  $("evidenceContent").innerHTML = `<div class="evidence-loading">正在读取本地截图、OCR 与解析记录…</div>`;
+  drawer.hidden = false;
+  syncModalPageLock();
+  requestAnimationFrame(() => {
+    drawer.classList.add("drawer-visible");
+    drawer.querySelector('[role="dialog"]')?.focus({ preventScroll: true });
+  });
+
+  try {
+    const response = await fetch(`./api/transaction-evidence?uid=${encodeURIComponent(transactionUid)}`, { cache: "no-store" });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) throw new Error(payload.answer || `读取失败：HTTP ${response.status}`);
+    if (state.activeEvidenceUid === transactionUid) renderEvidence(payload);
+  } catch (error) {
+    if (state.activeEvidenceUid !== transactionUid) return;
+    $("evidenceContent").innerHTML = `<div class="evidence-error"><strong>无法读取这笔交易的证据</strong><span>${escapeHtml(recoveryMessage(error, "读取交易证据"))}</span></div>`;
+  }
+}
+
+function closeEvidence() {
+  const drawer = $("evidenceDrawer");
+  if (!drawer || drawer.hidden) return;
+  const panel = drawer.querySelector(".evidence-drawer");
+  state.activeEvidenceUid = null;
+  afterTransition(panel, () => {
+    if (drawer.classList.contains("drawer-visible")) return;
+    drawer.hidden = true;
+    syncModalPageLock();
+  }, { fallback: 300 });
+  drawer.classList.remove("drawer-visible");
+  if (state.returnFocusElement instanceof HTMLElement) {
+    state.returnFocusElement.focus({ preventScroll: true });
+  }
+}
+
 /* ------------------------------- 轻提示 ------------------------------- */
 
 function showToast(message, tone = "info") {
@@ -939,20 +1360,47 @@ function showToast(message, tone = "info") {
   node.className = "toast";
   node.dataset.tone = tone;
   node.textContent = message;
+  node.setAttribute("role", "button");
+  node.setAttribute("tabindex", "0");
+  node.setAttribute("aria-label", `${message}，点击关闭提示`);
+  let autoDismissTimer = 0;
+  const dismiss = ({ instant = false } = {}) => {
+    window.clearTimeout(autoDismissTimer);
+    if (instant || prefersReducedMotion()) {
+      node.remove();
+      return;
+    }
+    node.classList.add("is-leaving");
+    afterTransition(node, () => node.remove(), { property: "opacity", fallback: 220 });
+  };
+  node.addEventListener("click", () => dismiss({ instant: true }));
+  node.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    dismiss({ instant: true });
+  });
   region.appendChild(node);
-  window.setTimeout(() => node.remove(), 4200);
+  autoDismissTimer = window.setTimeout(() => dismiss(), 4200);
+}
+
+function acknowledgeAgentStatus() {
+  const dot = document.querySelector(".pulse-dot");
+  if (!dot || prefersReducedMotion()) return;
+  dot.classList.remove("is-acknowledging");
+  requestAnimationFrame(() => {
+    dot.classList.add("is-acknowledging");
+    dot.addEventListener("animationend", () => dot.classList.remove("is-acknowledging"), { once: true });
+  });
 }
 
 /* ------------------------------- 渲染 ------------------------------- */
 
 function renderHeader() {
-  const month = scopedTransactions("month");
   const latest = state.transactions[0];
-  const categories = Object.keys(groupByCategory(month));
 
   $("headerSummary").textContent = latest
-    ? `已解析 ${state.transactions.length} 笔消费。最近一笔是 ${displayDate(latest.paid_at)} 的 ${latest.merchant || latest.thing || "消费"}，本月覆盖 ${categories.length} 个消费场景。`
-    : "账本还没有数据，先同步一次邮箱账单吧。";
+    ? `账本已同步 · ${state.transactions.length} 笔记录`
+    : "账本还没有数据，可以先同步邮箱账单。";
 
   const eyebrow = document.querySelector(".agent-eyebrow");
   if (state.demo && eyebrow && !eyebrow.querySelector(".demo-badge")) {
@@ -972,10 +1420,10 @@ function renderMetrics() {
   const selected = scopedTransactions(state.period);
   const selectedSpend = sum(selected);
   const maxTx = largest(selected);
-  const top = topCategory(selected);
   const selectedCategories = Object.keys(groupByCategory(selected));
 
   $("periodLabel").textContent = periodName();
+  $("analysisTitle").textContent = consumptionAnalysisTitle();
   $("coreAmount").textContent = formatMoney(selectedSpend);
   $("primaryMeta").textContent = selected.length
     ? `${selected.length} 笔消费 · ${selectedCategories.length} 个场景 · 最高 ${categorySummary(selected)}`
@@ -983,9 +1431,7 @@ function renderMetrics() {
 
   renderDelta(selectedSpend);
 
-  $("coreNarrative").textContent = top
-    ? `${periodLabel()}权重最高的是 ${categoryLabel(top[0])}，Agent 正在把该周期的金额、频率、支付渠道和单笔峰值一起分析。`
-    : "等待 Agent 建立当前消费画像。";
+  // #coreNarrative 归 renderDecisionFeed 管：它要念出实际选中的那几条结论。
   // 「今日」时日均就等于头图那个数字，换成笔均，避免同一个值出现两次。
   const perTransaction = state.period === "today";
   $("avgSpendLabel").textContent = perTransaction ? "笔均支出" : "日均支出";
@@ -995,7 +1441,7 @@ function renderMetrics() {
   $("txnCount").textContent = `${selected.length} 笔`;
   $("largestSpend").textContent = maxTx ? formatMoney(maxTx.amount) : "--";
   $("confidenceScore").textContent = selected.length ? `${averageConfidence(selected)}%` : "--";
-  $("signalMeta").textContent = `${periodLabel()}样本 ${selected.length} 笔 · ${averageConfidence(selected)}% 置信`;
+  $("signalMeta").textContent = `${periodLabel()} · ${selected.length} 笔样本`;
 
   const stateChip = $("analysisState");
   stateChip.textContent = selected.length ? "Active" : "Learning";
@@ -1006,6 +1452,8 @@ function renderDelta(currentSpend) {
   const node = $("coreDelta");
   const baseline = comparisonBaseline();
   if (!baseline || !(baseline.value > 0)) {
+    node.textContent = "";
+    node.removeAttribute("data-trend");
     node.hidden = true;
     return;
   }
@@ -1028,7 +1476,7 @@ function renderHeroBudget() {
   if (!key) {
     label.textContent = "预算口径";
     value.textContent = "不适用";
-    fill.style.width = "0%";
+    fill.style.setProperty("--meter-ratio", "0");
     meter.setAttribute("aria-valuenow", "0");
     meter.dataset.level = "ok";
     foot.textContent = "「全部」是历史累计，没有对应的预算周期。";
@@ -1042,7 +1490,7 @@ function renderHeroBudget() {
 
   label.textContent = budgetLabel(key);
   value.textContent = `${formatMoney(spend)} / ${formatMoney(budget)}`;
-  fill.style.width = `${clamp(usage, 0, 100)}%`;
+  fill.style.setProperty("--meter-ratio", String(clamp(usage, 0, 100) / 100));
   meter.setAttribute("aria-valuenow", String(clamp(usage, 0, 100)));
   meter.setAttribute("aria-valuetext", `已用 ${usage}%`);
   meter.dataset.level = usage > 100 ? "over" : usage >= 80 ? "warn" : "ok";
@@ -1055,26 +1503,362 @@ function renderHeroBudget() {
 }
 
 function renderHeroSpark() {
-  const series = trendSeries("day");
-  const max = Math.max(...series.map((item) => item.amount), 1);
-  const width = 140;
-  const height = 46;
-  const band = width / series.length;
-  const barWidth = Math.min(band * 0.56, 12);
+  const isProfile = state.period === "all";
+  const trendContent = $("heroTrendContent");
+  const profileContent = $("heroProfileContent");
+  const button = $("heroSpark");
+  trendContent.hidden = isProfile;
+  profileContent.hidden = !isProfile;
+  button.classList.toggle("is-profile", isProfile);
+  // 画像卡比迷你趋势矮一大截，末行得改成弹性高度把剩下的空间吃掉，
+  // 否则 space-between 会在预算块和画像卡之间留一片没有边界的空白。
+  button.closest(".hero-figure")?.classList.toggle("has-profile", isProfile);
 
-  const bars = series
-    .map((item, index) => {
-      const barHeight = Math.max((Math.max(item.amount, 0) / max) * height, 2);
-      const x = band * index + (band - barWidth) / 2;
-      return `<rect class="spark-bar${item.current ? " is-today" : ""}" x="${x.toFixed(1)}" y="${(height - barHeight).toFixed(1)}" width="${barWidth.toFixed(1)}" height="${barHeight.toFixed(1)}" rx="2"></rect>`;
-    })
-    .join("");
+  if (isProfile) {
+    const count = scopedTransactions("all").filter((tx) => positiveSpend(tx) > 0).length;
+    $("heroProfileMeta").textContent = count
+      ? `基于 ${count} 笔消费，生成专属账单画像`
+      : "同步消费记录后，就能生成专属画像";
+    $("heroProfileActionLabel").textContent = state.profileReport ? "查看画像" : "生成画像";
+    button.setAttribute("aria-label", state.profileReport ? "查看账单人格报告" : "生成账单人格报告");
+    return;
+  }
 
-  $("heroSparkChart").innerHTML = `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">${bars}</svg>`;
-  $("heroSpark").setAttribute(
-    "aria-label",
-    `近 7 天每日支出，最高 ${formatMoney(max)}。打开现金流趋势`,
-  );
+  // 走势徽标是 App.jsx 里的静态图形，不吃数据，这里只负责说清这个按钮是干什么的。
+  button.setAttribute("aria-label", "查看现金流趋势");
+}
+
+/* ------------------------------- 账单人格报告 ------------------------------- */
+
+function clearProfileReportStageTimer() {
+  if (state.profileReportStageTimer) window.clearInterval(state.profileReportStageTimer);
+  state.profileReportStageTimer = null;
+}
+
+function setProfileReportBusy(busy) {
+  state.profileReportBusy = busy;
+  [$("refreshProfileReport"), $("updateProfileReport")].forEach((button) => {
+    if (button) button.disabled = busy;
+  });
+}
+
+function renderProfileReportLoading() {
+  clearProfileReportStageTimer();
+  $("profileReportNavigation").hidden = true;
+  $("profileReportStale").hidden = true;
+  $("refreshProfileReport").hidden = true;
+  $("profileReportProgress").textContent = "正在生成";
+  $("profileReportPages").innerHTML = `
+    <section class="profile-report-state profile-report-loading" aria-label="正在生成账单人格报告">
+      <span class="profile-loading-orbit" aria-hidden="true"><i></i><i></i><i></i></span>
+      <h3>正在读懂你的消费轨迹</h3>
+      <p>这次不只算钱，还要找出藏在账单里的生活节奏。</p>
+      <ol class="profile-loading-stages">
+        <li class="is-active">整理消费足迹</li>
+        <li>提炼长期习惯</li>
+        <li>命名消费人格</li>
+      </ol>
+    </section>
+  `;
+  let stage = 0;
+  state.profileReportStageTimer = window.setInterval(() => {
+    stage = Math.min(stage + 1, 2);
+    document.querySelectorAll(".profile-loading-stages li").forEach((item, index) => {
+      item.classList.toggle("is-active", index === stage);
+      item.classList.toggle("is-done", index < stage);
+    });
+    if (stage === 2) clearProfileReportStageTimer();
+  }, 1150);
+}
+
+function renderProfileReportError(message) {
+  clearProfileReportStageTimer();
+  $("profileReportNavigation").hidden = true;
+  $("profileReportStale").hidden = true;
+  $("refreshProfileReport").hidden = true;
+  $("profileReportProgress").textContent = "生成未完成";
+  $("profileReportPages").innerHTML = `
+    <section class="profile-report-state profile-report-error" role="alert">
+      <span class="profile-error-mark" aria-hidden="true">
+        <svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="18"/><path d="M24 14v12M24 33v.5"/></svg>
+      </span>
+      <h3>这次画像没有整理好</h3>
+      <p>${escapeHtml(message || "生成过程中遇到问题，请稍后再试。")}</p>
+      <button class="btn btn-primary" type="button" data-profile-retry>重新生成</button>
+    </section>
+  `;
+}
+
+function profileCoverageLabel(coverage = {}) {
+  const formatDateOnly = (value, fallback) => {
+    const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return match ? `${match[1]}年${Number(match[2])}月${Number(match[3])}日` : fallback;
+  };
+  const start = formatDateOnly(coverage.start_date, "最早记录");
+  const end = formatDateOnly(coverage.end_date, "现在");
+  return `${start} — ${end}`;
+}
+
+function renderProfileReport(report) {
+  if (!report) return;
+  clearProfileReportStageTimer();
+  state.profileReport = report;
+  state.profileReportIndex = 0;
+  const coverage = report.coverage || {};
+  const traits = Array.isArray(report.persona?.traits) ? report.persona.traits : [];
+  const tags = Array.isArray(report.tags) ? report.tags : [];
+  const highlights = Array.isArray(report.highlights) ? report.highlights : [];
+  const moments = Array.isArray(report.moments) ? report.moments : [];
+  const wellbeing = report.wellbeing && typeof report.wellbeing === "object" ? report.wellbeing : null;
+  const wellbeingSignals = Array.isArray(wellbeing?.signals) ? wellbeing.signals : [];
+  const takeaways = Array.isArray(report.cfo?.takeaways) ? report.cfo.takeaways : [];
+  const suggestions = Array.isArray(report.cfo?.suggestions) ? report.cfo.suggestions : [];
+  const pages = [
+    `
+      <section class="profile-report-page profile-report-cover" data-profile-page="0" aria-label="报告封面">
+        <div class="profile-cover-image" aria-hidden="true"></div>
+        <div class="profile-cover-content">
+          <span class="profile-cover-rule" aria-hidden="true"></span>
+          <h3>你的消费人格<br>已经被账本写出来了</h3>
+          <p>${escapeHtml(profileCoverageLabel(coverage))}</p>
+          <div class="profile-cover-stats">
+            <span><b>${escapeHtml(String(coverage.transaction_count || 0))}</b> 笔消费</span>
+            <span><b>${escapeHtml(formatMoney(coverage.total_outflow_cny || 0))}</b> 累计支出</span>
+            <span><b>${escapeHtml(String(coverage.active_days || 0))}</b> 个活跃日</span>
+          </div>
+        </div>
+      </section>
+    `,
+    `
+      <section class="profile-report-page profile-persona-page" data-profile-page="1" aria-label="消费人格">
+        <div class="profile-persona-seal" aria-hidden="true"><span></span><i></i></div>
+        <div class="profile-persona-copy">
+          <p>如果消费习惯是一种生活流派，你属于</p>
+          <h3>${escapeHtml(report.persona?.title || "待命名的生活玩家")}</h3>
+          <strong>${escapeHtml(report.persona?.subtitle || "")}</strong>
+          <p class="profile-persona-intro">${escapeHtml(report.persona?.intro || report.persona?.summary || "")}</p>
+          <ul class="profile-persona-points">
+            ${traits.map((trait) => `
+              <li>
+                <span aria-hidden="true">${escapeHtml(trait.emoji)}</span>
+                <div><b>${escapeHtml(trait.label)}</b><p>${escapeHtml(trait.text)}</p></div>
+                <small>${escapeHtml(trait.evidence)}</small>
+              </li>
+            `).join("")}
+          </ul>
+        </div>
+      </section>
+    `,
+    `
+      <section class="profile-report-page profile-tags-page" data-profile-page="2" aria-label="人格标签">
+        <div class="profile-page-heading">
+          <h3>账单给你的生活贴了这些标签</h3>
+          <p>不是印象判断，每一条都能在流水里找到来处。</p>
+        </div>
+        <div class="profile-tag-list">
+          ${tags.map((tag, index) => `
+            <article class="profile-tag-row">
+              <span aria-hidden="true">${escapeHtml(tag.emoji || String(index + 1).padStart(2, "0"))}</span>
+              <div><h4>${escapeHtml(tag.label)}</h4><p>${escapeHtml(tag.reason)}</p></div>
+              <small>${escapeHtml(tag.evidence)}</small>
+            </article>
+          `).join("")}
+        </div>
+      </section>
+    `,
+    `
+      <section class="profile-report-page profile-highlights-page" data-profile-page="3" aria-label="关键数字">
+        <div class="profile-page-heading">
+          <h3>三个数字，拼出你的消费节奏</h3>
+          <p>总额之外，更能说明习惯的往往是频次、偏好与反复出现的选择。</p>
+        </div>
+        <div class="profile-highlight-list">
+          ${highlights.map((item) => `
+            <article class="profile-highlight-item">
+              <span class="profile-highlight-emoji" aria-hidden="true">${escapeHtml(item.emoji || "")}</span>
+              <strong>${escapeHtml(item.value)}</strong>
+              <h4>${escapeHtml(item.label)}</h4>
+              <p>${escapeHtml(item.context)}</p>
+            </article>
+          `).join("")}
+        </div>
+      </section>
+    `,
+    `
+      <section class="profile-report-page profile-moments-page" data-profile-page="4" aria-label="账单名场面">
+        <div class="profile-page-heading">
+          <h3>账单里的几个名场面</h3>
+          <p>某些选择只出现一次，某些习惯却一直在提醒你：这很像你。</p>
+        </div>
+        <div class="profile-moment-list">
+          ${moments.map((moment) => `
+            <article class="profile-moment-row">
+              <div>
+                <h4><span aria-hidden="true">${escapeHtml(moment.emoji || "")}</span>${escapeHtml(moment.title)}</h4>
+                <ul>${(moment.lines || (moment.detail ? [moment.detail] : [])).map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>
+              </div>
+              <small>${escapeHtml(moment.evidence)}</small>
+            </article>
+          `).join("")}
+        </div>
+      </section>
+    `,
+    wellbeing ? `
+      <section class="profile-report-page profile-wellbeing-page" data-profile-page="5" aria-label="生活健康画像">
+        <div class="profile-page-heading">
+          <h3>消费时间里，藏着怎样的生活节奏</h3>
+          <p>把餐饮付款时段和食物类型放在一起看，试着还原你的作息与饮食习惯。</p>
+        </div>
+        <div class="profile-wellbeing-layout">
+          <div class="profile-wellbeing-overview">
+            <span class="profile-wellbeing-confidence" data-confidence="${escapeHtml(wellbeing.confidence || "低")}">
+              推测可信度 ${escapeHtml(wellbeing.confidence || "低")}
+            </span>
+            <h4>${escapeHtml(wellbeing.headline || "账单正在积累生活线索")}</h4>
+            <p>${escapeHtml(wellbeing.summary || "目前的付款记录还不足以形成稳定判断。")}</p>
+            <div class="profile-wellbeing-reminder">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.2c4.8-2.7 7.4-6.3 7.4-10.2A4.2 4.2 0 0 0 12 7.2 4.2 4.2 0 0 0 4.6 10c0 3.9 2.6 7.5 7.4 10.2Z"/><path d="M12 7.2v8.4M8.8 11.8 12 15l3.2-3.2"/></svg>
+              <div><strong>生活提醒</strong><p>${escapeHtml(wellbeing.reminder || "继续记录，等生活节奏更清晰后再判断。")}</p></div>
+            </div>
+          </div>
+          <ol class="profile-wellbeing-signals">
+            ${wellbeingSignals.map((signal) => `
+              <li>
+                <div class="profile-wellbeing-signal-head">
+                  <h4>${escapeHtml(signal.label)}</h4>
+                  <span>可信度 ${escapeHtml(signal.confidence || "低")}</span>
+                </div>
+                <p>${escapeHtml(signal.inference)}</p>
+                <small>${escapeHtml(signal.evidence)}</small>
+              </li>
+            `).join("")}
+          </ol>
+        </div>
+        <p class="profile-wellbeing-disclaimer">${escapeHtml(wellbeing.disclaimer || "付款记录只能提供生活线索，不能替代真实饮食和作息记录。")}</p>
+      </section>
+    ` : "",
+    `
+      <section class="profile-report-page profile-cfo-page" data-profile-page="6" aria-label="CFO 总结">
+        <div class="profile-cfo-mark" aria-hidden="true"><span>CFO</span></div>
+        <div class="profile-cfo-copy">
+          <h3>最后，让 CFO 说句实在话</h3>
+          <p class="profile-cfo-headline">${escapeHtml(report.cfo?.headline || report.cfo?.verdict || "")}</p>
+          <div class="profile-cfo-takeaways">
+            ${takeaways.map((item) => `
+              <article>
+                <span aria-hidden="true">${escapeHtml(item.emoji || "")}</span>
+                <div><b>${escapeHtml(item.label)}</b><p>${escapeHtml(item.text)}</p></div>
+              </article>
+            `).join("")}
+          </div>
+          <div class="profile-cfo-next">
+            <strong>接下来，可以这样做</strong>
+            <ul>${suggestions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+          </div>
+          <button class="profile-cfo-ask" type="button" data-profile-ask>
+            让 CFO 继续解读
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" /></svg>
+          </button>
+        </div>
+      </section>
+    `,
+  ].filter(Boolean);
+
+  state.profileReportPageCount = pages.length;
+  $("profileReportPages").innerHTML = pages.join("");
+  $("profileReportDots").innerHTML = pages.map((_, index) => `
+    <button type="button" role="tab" data-profile-index="${index}" aria-label="查看报告第 ${index + 1} 页" aria-selected="${index === 0 ? "true" : "false"}"></button>
+  `).join("");
+  $("profileReportNavigation").hidden = false;
+  $("refreshProfileReport").hidden = false;
+  $("profileReportStale").hidden = !state.profileReportStale;
+  renderHeroSpark();
+  requestAnimationFrame(() => setProfileReportIndex(0, "auto"));
+}
+
+function setProfileReportIndex(index, behavior = "smooth") {
+  const viewport = $("profileReportViewport");
+  const count = state.profileReportPageCount;
+  if (!viewport || !count) return;
+  const next = clamp(Number(index) || 0, 0, count - 1);
+  state.profileReportIndex = next;
+  viewport.scrollTo({ left: viewport.clientWidth * next, top: 0, behavior: prefersReducedMotion() ? "auto" : behavior });
+  $("profileReportProgress").textContent = `${next + 1} / ${count}`;
+  $("profileReportPrev").disabled = next === 0;
+  $("profileReportNext").disabled = next === count - 1;
+  $("profileReportDots").querySelectorAll("button").forEach((button, buttonIndex) => {
+    const active = buttonIndex === next;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+  });
+}
+
+async function fetchProfileReportMetadata() {
+  const response = await fetch("./api/profile-report", { cache: "no-store" });
+  const payload = await response.json();
+  if (!response.ok || !payload.ok) throw new Error(payload.answer || `画像读取失败：HTTP ${response.status}`);
+  state.profileReport = payload.has_report ? payload.report : null;
+  state.profileReportStale = Boolean(payload.stale);
+  if (state.period === "all") renderHeroSpark();
+  return payload;
+}
+
+async function generateProfileReport(force = false) {
+  if (state.profileReportBusy) return;
+  setProfileReportBusy(true);
+  renderProfileReportLoading();
+  try {
+    const response = await fetch("./api/profile-report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force }),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) throw new Error(payload.answer || `生成失败：HTTP ${response.status}`);
+    state.profileReport = payload.report;
+    state.profileReportStale = false;
+    renderProfileReport(payload.report);
+  } catch (error) {
+    if (state.profileReport) {
+      renderProfileReport(state.profileReport);
+      showToast(`画像更新失败：${error.message}`, "error");
+    } else {
+      renderProfileReportError(error.message);
+    }
+  } finally {
+    setProfileReportBusy(false);
+  }
+}
+
+async function loadProfileReportForModal() {
+  if (state.profileReportBusy) return;
+  if (state.profileReport) renderProfileReport(state.profileReport);
+  try {
+    const payload = await fetchProfileReportMetadata();
+    if (payload.has_report) {
+      renderProfileReport(payload.report);
+      return;
+    }
+    await generateProfileReport(false);
+  } catch (error) {
+    if (!state.profileReport) renderProfileReportError(error.message);
+  }
+}
+
+function askFromProfileReport() {
+  if (!state.profileReport || state.chatBusy) {
+    if (state.chatBusy) showToast("上一个问题还在回答，等它结束再继续。", "info");
+    return;
+  }
+  const report = state.profileReport;
+  const labels = (report.tags || []).map((tag) => tag.label).join("、");
+  const wellbeing = report.wellbeing?.headline ? `生活健康画像提示“${report.wellbeing.headline}”。` : "";
+  const question = `请继续解读我的账单人格报告：消费人格是“${report.persona?.title || ""}”，标签包括${labels}。${wellbeing}结合全部账本，告诉我最值得肯定、最值得调整的消费习惯，并简短补充一条生活健康提醒。`;
+  closeModal("profileReportModal");
+  window.setTimeout(() => {
+    openChatExpanded();
+    submitQuestion(question);
+  }, prefersReducedMotion() ? 20 : 280);
 }
 
 function renderComposition() {
@@ -1111,7 +1895,7 @@ function renderComposition() {
       ${segments
         .map(
           (seg) =>
-            `<span class="composition-seg" style="width:${((seg.amount / total) * 100).toFixed(2)}%;--seg-color:${seg.color}"></span>`,
+            `<span class="composition-seg" style="--segment-weight:${seg.amount.toFixed(2)};--seg-color:${seg.color}"></span>`,
         )
         .join("")}
     </div>
@@ -1131,49 +1915,277 @@ function renderComposition() {
   `;
 }
 
-function buildDecisionItems() {
+/** 周期的完整天数，用于把「已花的钱」按节奏推到周期末。 */
+function periodTotalDays(period = state.period) {
+  const anchor = startOfDay(getAnchorDate());
+  if (period === "week") return 7;
+  if (period === "month") return new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).getDate();
+  return elapsedDaysInPeriod(period);
+}
+
+function shortChineseDate(date) {
+  return `${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+/**
+ * 「全部」这个周期词直接塞进句子里不通顺（"全部出现了 12 次"、"占了全部的 24%"），
+ * 所以按用途分两套说法：when 用于时间状语，scope 用于「占某某支出」。
+ */
+function periodPhrase(kind, period = state.period) {
+  const isAll = !["today", "week", "month"].includes(period);
+  if (kind === "scope") return isAll ? "全部支出" : `${periodLabel(period)}支出`;
+  return isAll ? "累计" : periodLabel(period);
+}
+
+/**
+ * 分析卡片的候选池。一条结论要进池子，必须同时满足：
+ *   1. 说的是别处没说过的事——首屏已经给了总额、环比、预算进度和最大单笔金额，
+ *      这里再复述一遍就是浪费一整块面积；
+ *   2. 带一个能被核对的数字；
+ *   3. 至少有一条去处：能筛出对应明细、能打开原始证据，或者能直接把问题甩给 Agent。
+ * 最后按 weight 取前三条。之前是固定三格，样本不够时只能填「继续观察即可」这种
+ * 没有信息量的占位话；现在宁可换一条真有内容的结论上来。
+ */
+function buildDecisionCandidates() {
   const selected = scopedTransactions(state.period);
   const selectedSpend = sum(selected);
-  const maxTx = largest(selected);
-  const grouped = groupByCategory(selected);
-  const top = topCategory(selected);
-  const foodAmount = (grouped.food_delivery?.amount || 0) + (grouped.coffee_tea?.amount || 0);
-  const foodCount = (grouped.food_delivery?.count || 0) + (grouped.coffee_tea?.count || 0);
-  const apps = [...new Set(selected.map((tx) => paymentLabel(tx.payment_app)).filter(Boolean))];
-  const topShare = top ? Math.round((top[1].amount / Math.max(selectedSpend, 1)) * 100) : 0;
   const label = periodLabel();
+  const candidates = [];
 
-  return [
-    {
-      type: "事实",
+  // — 支出集中：占比之外，还给出和第二名的差额，才知道「集中」到什么程度 —
+  const categoryEntries = Object.entries(groupByCategory(selected)).sort((a, b) => b[1].amount - a[1].amount);
+  const [top, second] = categoryEntries;
+  if (top && selectedSpend > 0) {
+    const share = Math.round((top[1].amount / selectedSpend) * 100);
+    candidates.push({
+      weight: share >= 55 ? 82 : share >= 40 ? 66 : share >= 30 ? 52 : 34,
+      type: "支出集中",
+      tone: share >= 55 ? "warn" : "normal",
+      title: `${categoryLabel(top[0])}占了${periodPhrase("scope")}的 ${share}%`,
+      copy: second
+        ? `${top[1].count} 笔合计 ${formatMoney(top[1].amount)}，比第二位的${categoryLabel(second[0])}多 ${formatMoney(top[1].amount - second[1].amount)}。`
+        : `${top[1].count} 笔合计 ${formatMoney(top[1].amount)}，目前所有消费都落在这一类。`,
+      actions: [
+        { kind: "ledger", text: `看这 ${top[1].count} 笔`, category: top[0] },
+        {
+          kind: "ask",
+          text: "让 Agent 拆开",
+          // 气泡左侧已经有一枚周期标签，问题开头再写一遍「本月」会读成结巴。
+          question: `${categoryLabel(top[0])}${periodPhrase("when")}一共 ${top[1].count} 笔、合计 ${formatMoney(top[1].amount)}。帮我逐笔拆一下都花在哪，并指出其中哪几笔属于可以砍掉的开销。`,
+        },
+      ],
+    });
+  }
+
+  // — 重复商户：全站只有这里看得到「同一家店来了几次」 —
+  const repeat = Object.entries(groupByMerchant(selected))
+    .filter(([, info]) => info.count >= 2)
+    .sort((a, b) => b[1].count - a[1].count || b[1].amount - a[1].amount)[0];
+  if (repeat) {
+    const [name, info] = repeat;
+    candidates.push({
+      weight: info.count >= 4 ? 76 : info.count === 3 ? 62 : 48,
+      type: "重复消费",
+      tone: info.count >= 4 ? "warn" : "normal",
+      title: `${name}${periodPhrase("when")}出现了 ${info.count} 次`,
+      copy: `合计 ${formatMoney(info.amount)}，平均每次 ${formatMoney(info.amount / info.count)}${info.latest ? `，最近一次 ${shortChineseDate(info.latest)}` : ""}。`,
+      actions: [
+        { kind: "ledger", text: `看这 ${info.count} 笔`, category: info.category, merchant: name },
+        {
+          kind: "ask",
+          text: "问问值不值",
+          question: `我在「${name}」${periodPhrase("when")}消费了 ${info.count} 次、合计 ${formatMoney(info.amount)}。这个频率算高吗？按这个节奏一个月大概要花多少，有没有更省的替代方案？`,
+        },
+      ],
+    });
+  }
+
+  // — 预算推演：首屏给的是「已用多少」，这里给的是「照这样下去会怎样」 —
+  const budgetKey = budgetKeyForPeriod();
+  const budget = budgetKey ? state.budgets[budgetKey] || 0 : 0;
+  if (budget > 0 && selectedSpend > 0 && ["week", "month"].includes(state.period)) {
+    const elapsed = elapsedDaysInPeriod();
+    const totalDays = periodTotalDays();
+    const daily = selectedSpend / elapsed;
+    const projected = daily * totalDays;
+    const overBy = projected - budget;
+    const remainingDays = Math.max(totalDays - elapsed, 0);
+    const safeDaily = remainingDays > 0 ? Math.max(budget - selectedSpend, 0) / remainingDays : 0;
+    candidates.push({
+      weight: overBy > 0 ? 88 : 44,
+      type: "预算推演",
+      tone: overBy > 0 ? "warn" : "good",
+      title: overBy > 0 ? `照这个节奏，${label}会超预算 ${formatMoney(overBy)}` : `照这个节奏，${label}能守住预算`,
+      copy: `前 ${elapsed} 天日均 ${formatMoney(daily)}，推到${label}末约 ${formatMoney(projected)}，预算 ${formatMoney(budget)}。${
+        remainingDays > 0
+          ? overBy > 0
+            ? `剩下 ${remainingDays} 天要压到日均 ${formatMoney(safeDaily)} 以内才守得住。`
+            : `剩下 ${remainingDays} 天日均还有 ${formatMoney(safeDaily)} 的空间。`
+          : ""
+      }`,
+      actions: [
+        { kind: "trend", text: "打开趋势图", mode: budgetKey },
+        {
+          kind: "ask",
+          text: "问怎么收",
+          question: `我${label}已经花了 ${formatMoney(selectedSpend)}，预算是 ${formatMoney(budget)}，还剩 ${remainingDays} 天。帮我判断会不会超支，如果要守住预算，具体该从哪几类消费里省。`,
+        },
+      ],
+    });
+  }
+
+  // — 单日峰值：哪天花得反常，只有按天聚合才看得出来 —
+  if (state.period !== "today") {
+    const days = Object.values(groupByDay(selected)).sort((a, b) => b.amount - a.amount);
+    const peak = days[0];
+    // 均值只按「有消费的天」算，否则周末不花钱会把基准压低，天天都成峰值。
+    const activeAverage = days.length ? selectedSpend / days.length : 0;
+    if (days.length >= 3 && peak && peak.amount > 0 && peak.amount >= activeAverage * 1.8) {
+      candidates.push({
+        weight: 64,
+        type: "单日峰值",
+        tone: "normal",
+        title: `${shortChineseDate(peak.date)}一天就花了 ${formatMoney(peak.amount)}`,
+        copy: `当天 ${peak.count} 笔，是有消费那几天平均值的 ${(peak.amount / activeAverage).toFixed(1)} 倍。`,
+        actions: [
+          { kind: "trend", text: "打开趋势图", mode: "day" },
+          {
+            kind: "ask",
+            text: "问那天怎么了",
+            question: `${shortChineseDate(peak.date)}这一天我花了 ${formatMoney(peak.amount)}、共 ${peak.count} 笔，明显高于平时。帮我看看那天的钱具体花在哪，是一次性支出还是有异常。`,
+          },
+        ],
+      });
+    }
+  }
+
+  // — 待核实：解析不确定的账，越早核对越省事 —
+  // 除了 OCR 解析置信低，分类环节「勉强给了个答案」的也算：
+  // deepseek_low 是模型低分命中，local_industry 是靠行业词猜的，
+  // unresolved 是重试到上限也没结论。这些都比「识别中」强，但值得人扫一眼。
+  const WEAK_CLASSIFICATION = new Set(["deepseek_low", "local_industry", "unresolved"]);
+  const unsure = selected
+    .filter(
+      (tx) =>
+        tx.classification_status === "pending" ||
+        Number(tx.confidence || 0) < 0.6 ||
+        WEAK_CLASSIFICATION.has(tx.classification_source),
+    )
+    .sort((a, b) => positiveSpend(b) - positiveSpend(a));
+  if (unsure.length) {
+    const unsureSpend = unsure.reduce((total, tx) => total + positiveSpend(tx), 0);
+    candidates.push({
+      weight: 70 + Math.min(unsure.length, 8),
+      type: "待核实",
+      tone: "warn",
+      title: `${unsure.length} 笔的解析结果还不确定`,
+      copy: `合计 ${formatMoney(unsureSpend)}，分类或金额可能不准，建议对着原始截图核一遍。`,
+      actions: [
+        { kind: "evidence", text: "去核对", uid: unsure[0].transaction_uid || "" },
+        {
+          kind: "ask",
+          text: "让 Agent 复核",
+          question: `账本里有 ${unsure.length} 笔消费的解析置信度偏低、合计 ${formatMoney(unsureSpend)}。帮我把这几笔列出来，说明每一笔的分类依据，并指出最可能分错的是哪一笔。`,
+        },
+      ],
+    });
+  }
+
+  // — 最大单笔：兜底项，同时也是最直接的一条追溯入口 —
+  const maxTx = largest(selected);
+  if (maxTx) {
+    const name = merchantKey(maxTx) || "未知商户";
+    const share = selectedSpend > 0 ? Math.round((positiveSpend(maxTx) / selectedSpend) * 100) : 0;
+    candidates.push({
+      weight: share >= 40 ? 72 : share >= 25 ? 56 : 30,
+      type: "最大单笔",
       tone: "normal",
-      title: `${label}共 ${selected.length} 笔消费`,
-      copy: `当前选择周期的总支出为 ${formatMoney(selectedSpend)}，覆盖 ${Object.keys(grouped).length} 个消费场景。`,
-    },
-    {
-      type: "模式",
-      tone: "normal",
-      title: top ? `${categoryLabel(top[0])} 是${label}最高权重` : "样本仍在建立",
-      copy: top ? `该场景占当前选择周期支出的 ${topShare}%，说明现金流变化主要由少数场景驱动。` : "继续积累账单后，Agent 会开始判断稳定习惯。",
-    },
-    {
-      type: "风险",
-      tone: foodCount >= 2 ? "warn" : "normal",
-      title: foodCount >= 2 ? `餐饮茶饮出现 ${foodCount} 次` : "餐饮频率暂无压力",
-      copy: foodCount >= 2 ? `餐饮和茶饮合计 ${formatMoney(foodAmount)}。建议先观察频率，再决定是否设置预算线。` : "当前餐饮样本偏少，先保持监控。",
-    },
-    {
-      type: "动作",
-      tone: "normal",
-      title: maxTx ? `最大单笔来自 ${maxTx.merchant || maxTx.product || "未知商户"}` : "暂无最大单笔",
-      copy: maxTx ? `${formatMoney(maxTx.amount)} 已被标记为关键节点。支付渠道覆盖 ${apps.join("、") || "暂无"}。` : "新账单进入后会自动标记关键节点。",
-    },
+      title: `${name} · ${formatMoney(maxTx.amount)}`,
+      copy: `${share > 0 ? `占${periodPhrase("scope")} ${share}%，` : ""}${paymentLabel(maxTx.payment_app)}支付于 ${displayDate(maxTx.paid_at)}。`,
+      actions: [
+        { kind: "evidence", text: "看原始证据", uid: maxTx.transaction_uid || "" },
+        {
+          kind: "ask",
+          text: "这笔正常吗",
+          question: `「${name}」这笔 ${formatMoney(maxTx.amount)} 是${periodPhrase("scope")}里最大的一笔。帮我核对它的分类和消费内容对不对，并判断这类支出多久出现一次算正常。`,
+        },
+      ],
+    });
+  }
+
+  // — 兜底：候选不足三条时，至少留一个明确的追问入口，而不是空着半块面板 —
+  candidates.push({
+    weight: 5,
+    type: "样本太少",
+    tone: "normal",
+    title: `${periodPhrase("when")}记录了 ${selected.length} 笔消费`,
+    copy: "样本还不算多，可以让 Agent 直接把这些消费按金额排一遍，先建立一个基线。",
+    actions: [
+      { kind: "ledger", text: "看全部明细", category: "all" },
+      {
+        kind: "ask",
+        text: "让 Agent 排个序",
+        question: `把这个周期里的每一笔消费按金额从高到低列出来，标注商户、分类和支付渠道，最后告诉我哪几笔最值得关注。`,
+      },
+    ],
+  });
+
+  return candidates;
+}
+
+function buildDecisionItems() {
+  return buildDecisionCandidates()
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, 3);
+}
+
+const DECISION_ACTION_ICONS = {
+  ledger: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h9"/></svg>`,
+  evidence: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4.5h8L18 9v10.5H6z"/><path d="M13.5 4.5V9H18"/></svg>`,
+  trend: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16.5 9 11l3.4 3.2L20 6.5"/><path d="M15.4 6.5H20V11"/></svg>`,
+  ask: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15.2a2.3 2.3 0 0 1-2.3 2.3H8.5L4 21V6.3A2.3 2.3 0 0 1 6.3 4h11.4A2.3 2.3 0 0 1 20 6.3z"/></svg>`,
+};
+
+function decisionActionButton(action) {
+  const attributes = [
+    `type="button"`,
+    `class="decision-action${action.kind === "ask" ? " is-ask" : ""}"`,
+    `data-decision-action="${escapeHtml(action.kind)}"`,
   ];
+  if (action.category) attributes.push(`data-category="${escapeHtml(action.category)}"`);
+  if (action.merchant) attributes.push(`data-merchant="${escapeHtml(action.merchant)}"`);
+  if (action.uid) attributes.push(`data-uid="${escapeHtml(action.uid)}"`);
+  if (action.mode) attributes.push(`data-mode="${escapeHtml(action.mode)}"`);
+  if (action.question) attributes.push(`data-question="${escapeHtml(action.question)}"`);
+  return `<button ${attributes.join(" ")}>${DECISION_ACTION_ICONS[action.kind] || ""}<span>${escapeHtml(action.text)}</span></button>`;
+}
+
+/**
+ * 「关键观察」的导语。它得念出这一屏真正算出了什么——
+ * 读了多少笔、落在几个场景、最后挑中的是哪三条结论。
+ * 写死一句「下面是最值得处理的三条」等于没说：换周期、换数据它都不动，
+ * 而下面那三张卡是会变的。
+ */
+function renderSectionNarrative(items) {
+  const node = $("coreNarrative");
+  const selected = scopedTransactions(state.period);
+
+  if (!selected.length) {
+    node.textContent = `${periodLabel()}还没有消费记录，换个周期，或者同步一次邮箱账单。`;
+    return;
+  }
+
+  const scenes = Object.keys(groupByCategory(selected)).length;
+  const types = items.map((item) => item.type);
+  // 量词跟着下面那块面板的名字走：面板叫「…消费分析」（consumptionAnalysisTitle），
+  // 这里就说「N 条消费分析」，指向明确。用「类」会和右侧「支出去向 13 类」撞词义。
+  node.textContent = `${periodPhrase("when")} ${selected.length} 笔消费散在 ${scenes} 个场景里，优先处理 ${types.length} 条消费分析：${types.join(" · ")}。`;
 }
 
 function renderDecisionFeed() {
   const selected = scopedTransactions(state.period);
   if (!selected.length) {
+    renderSectionNarrative([]);
     $("decisionFeed").innerHTML = emptyState({
       icon: "alert",
       title: `${periodLabel()}还没有消费记录`,
@@ -1182,14 +2194,22 @@ function renderDecisionFeed() {
     return;
   }
 
-  $("decisionFeed").innerHTML = buildDecisionItems()
+  const items = buildDecisionItems();
+  renderSectionNarrative(items);
+
+  $("decisionFeed").innerHTML = items
     .map(
       (item) => `
-      <div class="decision-item${item.tone === "warn" ? " warn" : ""}">
+      <div class="decision-item${item.tone === "warn" ? " warn" : item.tone === "good" ? " good" : ""}">
         <span class="decision-type">${escapeHtml(item.type)}</span>
         <div class="decision-copy">
           <strong>${escapeHtml(item.title)}</strong>
           <span>${escapeHtml(item.copy)}</span>
+          ${
+            item.actions?.length
+              ? `<div class="decision-actions">${item.actions.filter((action) => action.kind !== "evidence" || action.uid).map(decisionActionButton).join("")}</div>`
+              : ""
+          }
         </div>
       </div>
     `,
@@ -1197,18 +2217,65 @@ function renderDecisionFeed() {
     .join("");
 }
 
+/**
+ * 从分析卡片跳到账本：按分类（可再叠加商户）筛好再滚过去，
+ * 让「看这 4 笔」真的只剩那 4 笔，而不是把人扔到一张全量表前面。
+ */
+function focusLedger({ category = "all", merchant = "", range = null } = {}) {
+  state.filter = category || "all";
+  state.merchantFocus = merchant || "";
+  state.dateRange = range;
+  state.ledgerFilterExpanded = false;
+  state.ledgerPage = 1;
+  renderFilters();
+  renderTransactions();
+  // 先让滚动揭示动画把新行的位移清掉，再滚过去：反过来的话滚动落点会被随后的
+  // 布局变化带偏，人到了账本却停在半空。
+  window.refreshCfoMotion?.({ scope: "ledger" });
+  requestAnimationFrame(() => {
+    document.getElementById("ledger")?.scrollIntoView({
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+      block: "start",
+    });
+  });
+}
+
+/**
+ * 从趋势明细格跳到账本：把这一期的起止塞进 dateRange，关掉弹窗再滚过去。
+ * 这里不带分类/商户条件——用户点的是「这段时间」，不是「这段时间的某一类」。
+ */
+function jumpToTrendPeriod(index) {
+  const item = state.activeTrendSeries[index];
+  if (!item?.start || !item?.end) return;
+  closeModal("trendModal");
+  focusLedger({ range: { start: item.start, end: item.end, label: item.title } });
+}
+
+/** 从分析卡片直接追问：先把对话滚进视野，再把问题发出去。 */
+function askFromInsight(question) {
+  if (!question) return;
+  document.getElementById("heroChat")?.scrollIntoView({
+    behavior: prefersReducedMotion() ? "auto" : "smooth",
+    block: "center",
+  });
+  if (state.chatBusy) {
+    showToast("上一个问题还在回答，等它结束再追问。", "info");
+    return;
+  }
+  submitQuestion(question);
+}
+
 function renderCategoryStack() {
   const selected = scopedTransactions(state.period);
   const grouped = groupByCategory(selected);
   const entries = Object.entries(grouped).sort((a, b) => b[1].amount - a[1].amount);
-  const peak = entries.length ? entries[0][1].amount : 0;
-  const total = Math.max(sum(selected), 1);
+  // 分类只统计正向消费，因此占比总额也必须使用分类金额总和，不能混用净支出。
+  const total = entries.reduce((acc, [, value]) => acc + value.amount, 0);
 
   $("categoryStack").innerHTML = entries.length
     ? entries
         .map(([category, value]) => {
-          const share = Math.round((value.amount / total) * 100);
-          const width = peak > 0 ? (value.amount / peak) * 100 : 0;
+          const share = total > 0 ? (value.amount / total) * 100 : 0;
           return `
             <div class="category-row">
               <div class="category-name">
@@ -1216,8 +2283,8 @@ function renderCategoryStack() {
                 <strong>${escapeHtml(categoryLabel(category))}</strong>
               </div>
               <div class="category-value">${escapeHtml(formatMoney(value.amount))}</div>
-              <div class="category-track" aria-hidden="true"><span style="width:${width.toFixed(1)}%;--seg-color:${categoryColor(category)}"></span></div>
-              <div class="category-sub">${value.count} 笔 · 占 ${share}%</div>
+              <div class="category-track" aria-hidden="true"><span style="--category-ratio:${(clamp(share, 0, 100) / 100).toFixed(4)};--seg-color:${categoryColor(category)}"></span></div>
+              <div class="category-sub">${value.count} 笔 · 占 ${Math.round(share)}%</div>
             </div>
           `;
         })
@@ -1235,6 +2302,16 @@ function renderFilters() {
   $("filterBar").innerHTML = `
     <div class="filter-strip">
       <div class="filter-strip-scroll">
+        ${state.merchantFocus ? `
+          <button class="ledger-filter-chip is-merchant" data-clear-merchant type="button" aria-label="取消按商户「${escapeHtml(state.merchantFocus)}」筛选">
+            ${escapeHtml(state.merchantFocus)} <span aria-hidden="true">×</span>
+          </button>
+        ` : ""}
+        ${state.dateRange ? `
+          <button class="ledger-filter-chip is-range" data-clear-range type="button" aria-label="取消按时间区间「${escapeHtml(state.dateRange.label)}」筛选">
+            ${escapeHtml(state.dateRange.label)} <span aria-hidden="true">×</span>
+          </button>
+        ` : ""}
         ${primaryCategories.map((category) => filterButton(category)).join("")}
         ${selectedIsExtra ? filterButton(state.filter, { current: true }) : ""}
       </div>
@@ -1264,8 +2341,14 @@ function renderFilters() {
 }
 
 function renderTransactions() {
-  let transactions = scopedTransactions(state.period);
+  // 有显式区间时不再叠顶部周期：区间是用户从趋势图点进来的，
+  // 再和「本月」求交集只会得到一张空表。
+  let transactions = state.dateRange
+    ? transactionsBetween(state.dateRange.start, state.dateRange.end)
+    : scopedTransactions(state.period);
   if (state.filter !== "all") transactions = transactions.filter((tx) => (tx.category || "uncategorized") === state.filter);
+  // 商户维度只由分析卡片的「看这 N 笔」写入，筛选栏里以一枚可关闭的胶囊呈现。
+  if (state.merchantFocus) transactions = transactions.filter((tx) => merchantKey(tx) === state.merchantFocus);
 
   const totalPages = Math.max(1, Math.ceil(transactions.length / ledgerPageSize));
   state.ledgerPage = Math.min(Math.max(state.ledgerPage, 1), totalPages);
@@ -1273,14 +2356,16 @@ function renderTransactions() {
   const pageTransactions = transactions.slice(start, start + ledgerPageSize);
 
   if (!transactions.length) {
-    const isFiltered = state.filter !== "all";
+    const isFiltered = state.filter !== "all" || Boolean(state.merchantFocus) || Boolean(state.dateRange);
+    const scopeName = state.merchantFocus || (state.filter !== "all" ? categoryLabel(state.filter) : "");
+    const rangeName = state.dateRange?.label || periodLabel();
     const body = state.transactions.length
       ? emptyState({
           icon: isFiltered ? "filter" : "empty",
-          title: isFiltered ? `${categoryLabel(state.filter)}在${periodLabel()}没有记录` : `${periodLabel()}还没有交易`,
-          hint: isFiltered ? "换个分类或者把周期放宽到「全部」。" : "把账单截图发到绑定邮箱，同步后就会出现在这里。",
+          title: isFiltered ? `${scopeName}在${rangeName}没有记录` : `${periodLabel()}还没有交易`,
+          hint: isFiltered ? "换个分类，或者清掉筛选看全部。" : "把账单截图发到绑定邮箱，同步后就会出现在这里。",
           action: isFiltered
-            ? `<button class="btn btn-quiet" type="button" data-filter="all">查看全部分类</button>`
+            ? `<button class="btn btn-quiet" type="button" data-filter="all">清掉筛选</button>`
             : "",
         })
       : emptyState({
@@ -1304,7 +2389,14 @@ function renderTransactions() {
       const category = tx.category || "uncategorized";
       const isInflow = tx.direction === "inflow";
       return `
-        <tr class="txn-row" role="row" data-motion-row>
+        <tr
+          class="txn-row"
+          role="row"
+          data-motion-row
+          data-transaction-uid="${escapeHtml(tx.transaction_uid || "")}"
+          tabindex="0"
+          aria-label="查看 ${escapeHtml(title)} ${escapeHtml(formatMoney(tx.amount))} 的交易证据"
+        >
           <td role="cell" class="td-time">${escapeHtml(displayDate(tx.paid_at))}</td>
           <td role="cell" class="td-main">
             <div class="txn-title" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
@@ -1350,28 +2442,265 @@ function renderTransactions() {
 
 /* ------------------------------- 对话 ------------------------------- */
 
+function setChatPageLock(locked) {
+  const body = document.body;
+  if (locked) {
+    const scrollbarWidth = Math.max(0, window.innerWidth - document.documentElement.clientWidth);
+    body.style.setProperty("--chat-scrollbar-compensation", `${scrollbarWidth}px`);
+    body.classList.add("chat-expanded-open");
+    return;
+  }
+  body.classList.remove("chat-expanded-open");
+  body.style.removeProperty("--chat-scrollbar-compensation");
+}
+
+function restoreChatScrollPosition(position) {
+  if (!position) return;
+  const root = document.documentElement;
+  const previousScrollBehavior = root.style.scrollBehavior;
+  root.style.scrollBehavior = "auto";
+  window.scrollTo(position.left, position.top);
+  root.style.scrollBehavior = previousScrollBehavior;
+}
+
+function chatIsAtLatest() {
+  const messages = $("chatMessages");
+  if (!messages) return true;
+  return messages.scrollHeight - messages.scrollTop - messages.clientHeight < 28;
+}
+
+function updateChatLatestButton() {
+  const button = $("chatLatestButton");
+  if (!button) return;
+  button.hidden = !state.chatExpanded || chatIsAtLatest();
+}
+
+function scrollChatToLatest() {
+  const messages = $("chatMessages");
+  if (!messages) return;
+  messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+  window.setTimeout(updateChatLatestButton, 340);
+}
+
+function latestAgentAnswer() {
+  return [...state.chatHistory].reverse().find((item) => item.role === "assistant")?.content || "";
+}
+
+async function copyLastAnswer() {
+  const answer = latestAgentAnswer();
+  if (!answer) {
+    showToast("还没有可以复制的 CFO 回答", "error");
+    return;
+  }
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(answer);
+    } else {
+      const textarea = document.createElement("textarea");
+      textarea.value = answer;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      textarea.remove();
+    }
+    showToast("最近一条 CFO 回答已复制");
+  } catch {
+    showToast("复制失败，请手动选择回答内容", "error");
+  }
+}
+
+function prepareChatCollapsePreview(chat, placeholder) {
+  const preview = chat.cloneNode(true);
+  preview.removeAttribute("id");
+  preview.classList.remove("is-expanded", "is-expanded-active", "is-collapsing");
+  preview.classList.add("chat-collapse-preview");
+  preview.setAttribute("aria-hidden", "true");
+  preview.style.removeProperty("transition");
+  preview.style.removeProperty("transform");
+  preview.style.removeProperty("transform-origin");
+  preview.style.removeProperty("opacity");
+  preview.querySelector("#copyLastAnswerButton")?.setAttribute("hidden", "");
+  preview.querySelector("#closeChatExpandButton")?.setAttribute("hidden", "");
+  preview.querySelectorAll("[id]").forEach((node) => node.removeAttribute("id"));
+  placeholder.replaceChildren(preview);
+  return preview;
+}
+
+function openChatExpanded() {
+  if (state.chatExpanded) return;
+  const chat = $("heroChat");
+  const backdrop = $("chatExpandBackdrop");
+  const placeholder = $("chatExpandPlaceholder");
+  const expandButton = $("expandChatButton");
+  const copyButton = $("copyLastAnswerButton");
+  const closeButton = $("closeChatExpandButton");
+  if (!chat || !backdrop || !placeholder || !copyButton || !closeButton) return;
+
+  state.chatTransitionCancel?.();
+  state.chatTransitionCancel = null;
+  placeholder.replaceChildren();
+  const originRect = chat.getBoundingClientRect();
+  state.chatExpanded = true;
+  state.chatReturnFocusElement = document.activeElement;
+  state.chatReturnScrollPosition = { left: window.scrollX, top: window.scrollY };
+  setChatPageLock(true);
+  backdrop.hidden = false;
+  placeholder.hidden = false;
+  placeholder.classList.add("is-visible");
+  copyButton.hidden = false;
+  closeButton.hidden = false;
+  chat.classList.remove("is-collapsing");
+  chat.classList.add("is-expanded");
+  chat.style.transition = "none";
+  chat.style.transformOrigin = "top left";
+  chat.style.opacity = "1";
+  chat.style.transform = "none";
+  chat.style.willChange = "transform, opacity";
+  const targetRect = chat.getBoundingClientRect();
+  const startScaleX = targetRect.width ? originRect.width / targetRect.width : 1;
+  const startScaleY = targetRect.height ? originRect.height / targetRect.height : 1;
+  chat.style.transform = `translate3d(${originRect.left - targetRect.left}px, ${originRect.top - targetRect.top}px, 0) scale(${startScaleX}, ${startScaleY})`;
+  expandButton?.setAttribute("aria-expanded", "true");
+  updateChatLatestButton();
+
+  requestAnimationFrame(() => {
+    backdrop.classList.add("is-visible");
+    chat.classList.add("is-expanded-active");
+    chat.style.transition = "transform var(--motion-chat-enter) var(--ease-out), opacity var(--motion-overlay-enter) var(--ease-out)";
+    chat.style.transform = "none";
+    closeButton.focus({ preventScroll: true });
+  });
+
+  state.chatTransitionCancel = afterTransition(chat, () => {
+    if (!state.chatExpanded) return;
+    chat.style.transition = "";
+    chat.style.transform = "";
+    chat.style.transformOrigin = "";
+    chat.style.opacity = "";
+    chat.style.willChange = "";
+    state.chatTransitionCancel = null;
+  }, { fallback: 540 });
+}
+
+function closeChatExpanded() {
+  if (!state.chatExpanded) return;
+  const chat = $("heroChat");
+  const backdrop = $("chatExpandBackdrop");
+  const placeholder = $("chatExpandPlaceholder");
+  const expandButton = $("expandChatButton");
+  const copyButton = $("copyLastAnswerButton");
+  const closeButton = $("closeChatExpandButton");
+  if (!chat || !backdrop || !placeholder || !copyButton || !closeButton) return;
+
+  state.chatTransitionCancel?.();
+  state.chatTransitionCancel = null;
+  placeholder.hidden = false;
+  placeholder.classList.add("is-visible");
+  const preview = prepareChatCollapsePreview(chat, placeholder);
+  const renderedOpacity = getComputedStyle(chat).opacity;
+  chat.style.transition = "none";
+  chat.style.transform = "none";
+  chat.style.opacity = renderedOpacity;
+  chat.style.transformOrigin = "";
+  chat.style.willChange = "opacity";
+  state.chatExpanded = false;
+  chat.classList.add("is-collapsing");
+  backdrop.classList.remove("is-visible");
+  expandButton?.setAttribute("aria-expanded", "false");
+
+  requestAnimationFrame(() => {
+    preview.classList.add("is-preview-visible");
+    chat.style.transition = "opacity var(--motion-chat-exit) var(--ease-out)";
+    chat.style.opacity = "0";
+  });
+
+  state.chatTransitionCancel = afterTransition(chat, () => {
+    if (state.chatExpanded) return;
+    chat.classList.remove("is-expanded", "is-expanded-active", "is-collapsing");
+    copyButton.hidden = true;
+    closeButton.hidden = true;
+    placeholder.replaceChildren();
+    placeholder.classList.remove("is-visible");
+    placeholder.hidden = true;
+    backdrop.hidden = true;
+    setChatPageLock(false);
+    chat.style.transition = "";
+    chat.style.transform = "";
+    chat.style.transformOrigin = "";
+    chat.style.opacity = "";
+    chat.style.willChange = "";
+    if (state.chatReturnFocusElement instanceof HTMLElement) {
+      state.chatReturnFocusElement.focus({ preventScroll: true });
+    } else {
+      expandButton?.focus({ preventScroll: true });
+    }
+    const returnScrollPosition = state.chatReturnScrollPosition;
+    if (returnScrollPosition) {
+      restoreChatScrollPosition(returnScrollPosition);
+      requestAnimationFrame(() => {
+        restoreChatScrollPosition(returnScrollPosition);
+      });
+    }
+    state.chatReturnFocusElement = null;
+    state.chatReturnScrollPosition = null;
+    state.chatTransitionCancel = null;
+  }, { property: "opacity", fallback: 360 });
+}
+
+function messageUsesDocumentLayout(text) {
+  const content = String(text || "");
+  return (
+    content.length > 180 ||
+    /(^|\n)\s*(#{1,3}\s|[-*]\s|\d+\.\s|>\s)/.test(content) ||
+    /\|.+\|/.test(content)
+  );
+}
+
 function addMessage(role, text, options = {}) {
   const shouldSave = options.save !== false;
   const container = $("chatMessages");
   const node = document.createElement("div");
   node.className = `message ${role}`;
+  if (options.reset) node.classList.add("reset-message");
+  if (role === "agent" && !options.thinking && messageUsesDocumentLayout(text)) {
+    node.classList.add("document-message");
+  }
+  node.setAttribute("aria-label", role === "user" ? "提问者消息" : "CFO Agent 回答");
+
+  const avatar = document.createElement("img");
+  avatar.className = "message-avatar";
+  avatar.src = role === "user" ? chatAvatarAssets.user : chatAvatarAssets.agent;
+  avatar.alt = role === "user" ? "提问者像素头像" : "CFO Agent 像素头像";
+  avatar.width = 36;
+  avatar.height = 36;
+  avatar.loading = "lazy";
+  avatar.decoding = "async";
+
+  const bubble = document.createElement("div");
+  bubble.className = "message-bubble";
   if (options.thinking) {
     node.classList.add("thinking-message");
-    node.innerHTML = `<span class="typing-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>${escapeHtml(text)}</span>`;
+    bubble.innerHTML = `<span class="typing-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>${escapeHtml(text)}</span>`;
   } else {
     if (options.periodTag) {
       const chip = document.createElement("span");
       chip.className = "period-chip";
       chip.textContent = options.periodTag;
-      node.appendChild(chip);
+      bubble.appendChild(chip);
     }
     const body = document.createElement("div");
     body.className = "message-body";
     setMessageContent(body, role, text, options);
-    node.appendChild(body);
+    bubble.appendChild(body);
   }
+  node.append(avatar, bubble);
   container.appendChild(node);
   container.scrollTop = container.scrollHeight;
+  updateChatLatestButton();
   if (shouldSave && (role === "user" || role === "agent")) {
     state.chatHistory.push({
       role: role === "agent" ? "assistant" : "user",
@@ -1385,6 +2714,7 @@ function addMessage(role, text, options = {}) {
 function setChatBusy(busy) {
   state.chatBusy = busy;
   const button = document.querySelector(".chat-send");
+  const clearButton = $("clearChatButton");
   const input = $("chatInput");
   if (button) {
     button.disabled = busy;
@@ -1392,9 +2722,27 @@ function setChatBusy(busy) {
     if (text) text.textContent = busy ? button.dataset.labelBusy : button.dataset.labelIdle;
   }
   if (input) input.setAttribute("aria-busy", busy ? "true" : "false");
+  if (clearButton) clearButton.disabled = busy;
   document.querySelectorAll(".quick-prompts button").forEach((node) => {
     node.disabled = busy;
   });
+}
+
+function clearChatSession() {
+  if (state.chatBusy) return;
+  state.chatHistory = [];
+  $("chatMessages").innerHTML = "";
+  $("headerSummary").textContent = "会话已清空 · 等待你的下一次提问";
+  const resetMessage = addMessage(
+    "agent",
+    "会话面板已清空，我们再来聊点什么呢。",
+    { save: false, reset: true },
+  );
+  resetMessage.setAttribute("aria-label", "CFO Agent 会话状态提示");
+  $("chatInput").value = "";
+  updateChatLatestButton();
+  $("chatInput").focus();
+  showToast("会话已清空，随时可以继续提问");
 }
 
 async function askCfoAgent(question, history) {
@@ -1424,27 +2772,32 @@ async function submitQuestion(question) {
   try {
     const answer = await askCfoAgent(question, priorHistory);
     thinkingNode.classList.remove("thinking-message");
-    thinkingNode.innerHTML = "";
+    thinkingNode.classList.toggle("document-message", messageUsesDocumentLayout(answer));
+    const bubble = thinkingNode.querySelector(".message-bubble");
+    bubble.innerHTML = "";
     const body = document.createElement("div");
     body.className = "message-body";
-    thinkingNode.appendChild(body);
+    bubble.appendChild(body);
     setMessageContent(body, "agent", answer, { split: true });
     state.chatHistory.push({ role: "assistant", content: answer });
     state.chatHistory = state.chatHistory.slice(-12);
   } catch (error) {
     const fallback = `没能拿到回答：${error.message}`;
     thinkingNode.classList.remove("thinking-message");
+    thinkingNode.classList.remove("document-message");
     thinkingNode.classList.add("error-message");
-    thinkingNode.innerHTML = "";
+    const bubble = thinkingNode.querySelector(".message-bubble");
+    bubble.innerHTML = "";
     const body = document.createElement("div");
     body.className = "message-body";
-    thinkingNode.appendChild(body);
+    bubble.appendChild(body);
     setMessageContent(body, "agent", fallback);
     state.chatHistory.push({ role: "assistant", content: fallback });
     state.chatHistory = state.chatHistory.slice(-12);
   } finally {
     setChatBusy(false);
     $("chatMessages").scrollTop = $("chatMessages").scrollHeight;
+    updateChatLatestButton();
   }
 }
 
@@ -1530,6 +2883,7 @@ async function syncMailData() {
       : "没有发现新的未读账单";
     const meta = `扫描 ${payload.candidate_count} 封候选邮件，命中 ${payload.matched_messages} 封，处理 ${payload.processed_attachments} 个附件，用时 ${payload.duration_seconds}s。`;
     setSyncModalState("success", title, meta);
+    acknowledgeAgentStatus();
     if (payload.new_transactions > 0) showToast(`同步完成，新增 ${payload.new_transactions} 笔交易`);
     refreshPendingClassifications();
   } catch (error) {
@@ -1641,6 +2995,10 @@ function movePeriodThumb() {
 function selectPeriod(button, options = {}) {
   if (!button) return;
   state.period = button.dataset.period;
+  // 换周期后旧商户可能一笔都没有，留着只会得到一张空表。
+  // 时间区间同理：既然选了新周期，从趋势图带过来的那段就该让位。
+  state.merchantFocus = "";
+  state.dateRange = null;
   state.ledgerPage = 1;
   periodButtons().forEach((item) => {
     const active = item === button;
@@ -1658,8 +3016,24 @@ function selectPeriod(button, options = {}) {
 /* ------------------------------- 事件 ------------------------------- */
 
 function wireInteractions() {
-  $("openTrendModal").addEventListener("click", () => openModal("trendModal"));
-  $("heroSpark").addEventListener("click", () => openModal("trendModal"));
+  window.addEventListener("cfo:open-evidence", (event) => {
+    if (event.detail?.uid) openEvidence(event.detail.uid);
+  });
+
+  // 顶栏已经表达过关注哪个时间尺度，弹窗别把这个上下文丢了。
+  // （「分析」信号卡的深链自己指定刻度，不走这里。）
+  const openTrendForPeriod = () => {
+    state.trendMode = trendModeForPeriod();
+    openModal("trendModal");
+  };
+  $("openTrendModal").addEventListener("click", openTrendForPeriod);
+  $("heroSpark").addEventListener("click", () => {
+    if (state.period === "all") {
+      openModal("profileReportModal");
+      return;
+    }
+    openTrendForPeriod();
+  });
   $("openBudgetSettings").addEventListener("click", () => openModal("budgetModal"));
 
   $("openSyncModal").addEventListener("click", () => {
@@ -1668,6 +3042,51 @@ function wireInteractions() {
   });
 
   $("startSyncButton").addEventListener("click", () => syncMailData());
+  $("clearChatButton").addEventListener("click", clearChatSession);
+  $("expandChatButton").addEventListener("click", openChatExpanded);
+  $("closeChatExpandButton").addEventListener("click", closeChatExpanded);
+  $("copyLastAnswerButton").addEventListener("click", copyLastAnswer);
+  $("chatLatestButton").addEventListener("click", scrollChatToLatest);
+  $("backToTopButton").addEventListener("click", (event) => {
+    event.preventDefault();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+  $("chatMessages").addEventListener("scroll", updateChatLatestButton, { passive: true });
+
+  $("chatExpandBackdrop").addEventListener("click", closeChatExpanded);
+
+  $("refreshProfileReport").addEventListener("click", () => generateProfileReport(true));
+  $("updateProfileReport").addEventListener("click", () => generateProfileReport(true));
+  $("profileReportPrev").addEventListener("click", () => setProfileReportIndex(state.profileReportIndex - 1));
+  $("profileReportNext").addEventListener("click", () => setProfileReportIndex(state.profileReportIndex + 1));
+  $("profileReportDots").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-profile-index]");
+    if (button) setProfileReportIndex(Number(button.dataset.profileIndex));
+  });
+  $("profileReportPages").addEventListener("click", (event) => {
+    if (event.target.closest("[data-profile-retry]")) generateProfileReport(true);
+    if (event.target.closest("[data-profile-ask]")) askFromProfileReport();
+  });
+  $("profileReportViewport").addEventListener("scroll", () => {
+    if (state.profileReportScrollFrame) return;
+    state.profileReportScrollFrame = requestAnimationFrame(() => {
+      state.profileReportScrollFrame = null;
+      const viewport = $("profileReportViewport");
+      if (!viewport.clientWidth || !state.profileReportPageCount) return;
+      const index = clamp(Math.round(viewport.scrollLeft / viewport.clientWidth), 0, state.profileReportPageCount - 1);
+      if (index !== state.profileReportIndex) {
+        state.profileReportIndex = index;
+        $("profileReportProgress").textContent = `${index + 1} / ${state.profileReportPageCount}`;
+        $("profileReportPrev").disabled = index === 0;
+        $("profileReportNext").disabled = index === state.profileReportPageCount - 1;
+        $("profileReportDots").querySelectorAll("button").forEach((button, buttonIndex) => {
+          const active = buttonIndex === index;
+          button.classList.toggle("is-active", active);
+          button.setAttribute("aria-selected", active ? "true" : "false");
+        });
+      }
+    });
+  }, { passive: true });
 
   document.querySelectorAll("[data-modal-close]").forEach((button) => {
     button.addEventListener("click", () => closeModal(button.dataset.modalClose));
@@ -1677,6 +3096,10 @@ function wireInteractions() {
     backdrop.addEventListener("click", (event) => {
       if (event.target === backdrop) closeModal(backdrop.id);
     });
+  });
+
+  $("evidenceDrawer").addEventListener("click", (event) => {
+    if (event.target === $("evidenceDrawer") || event.target.closest("[data-drawer-close]")) closeEvidence();
   });
 
   // 弹窗内、空态里出现的「打开某个弹窗」按钮
@@ -1750,6 +3173,36 @@ function wireInteractions() {
     $("trendTooltip").hidden = true;
   });
 
+  // 柱子和明细格互为入口：点哪边都选中同一期，点图表空白处取消。
+  $("trendChart").addEventListener("click", (event) => {
+    const slot = event.target.closest(".trend-slot");
+    setTrendSelection(slot ? Number(slot.dataset.trendIndex) : null);
+  });
+
+  // <g role="button"> 不像原生按钮那样把回车翻译成 click，得自己接。
+  $("trendChart").addEventListener("keydown", (event) => {
+    if (!["Enter", " "].includes(event.key)) return;
+    const slot = event.target.closest(".trend-slot");
+    if (!slot) return;
+    event.preventDefault();
+    setTrendSelection(Number(slot.dataset.trendIndex));
+  });
+
+  $("trendBreakdown").addEventListener("click", (event) => {
+    // 箭头优先：它和格子是并列按钮，点箭头不该只是高亮一下
+    const jump = event.target.closest("[data-trend-jump]");
+    if (jump) {
+      jumpToTrendPeriod(Number(jump.dataset.trendJump));
+      return;
+    }
+    const body = event.target.closest(".trend-cell-body");
+    if (!body) return;
+    setTrendSelection(Number(body.dataset.trendIndex));
+  });
+
+  // 回到当前那一期的高亮，不是取消选中。
+  $("trendBudgetReset").addEventListener("click", () => setTrendSelection(currentTrendIndex()));
+
   // 键盘用户也能读到每根柱子的数值
   $("trendChart").addEventListener(
     "focusin",
@@ -1815,15 +3268,30 @@ function wireInteractions() {
         window.skipCfoOpening?.();
         return;
       }
+      if (state.chatExpanded) {
+        closeChatExpanded();
+        return;
+      }
       const modal = topmostOpenModal();
-      if (modal) closeModal(modal.id);
+      if (!modal) {
+        if (!$("evidenceDrawer").hidden) closeEvidence();
+      } else {
+        closeModal(modal.id);
+      }
+      return;
+    }
+
+    const profileOpen = !$("profileReportModal").hidden;
+    const tag = document.activeElement?.tagName;
+    if (profileOpen && tag !== "INPUT" && tag !== "TEXTAREA" && ["ArrowLeft", "ArrowRight"].includes(event.key)) {
+      event.preventDefault();
+      setProfileReportIndex(state.profileReportIndex + (event.key === "ArrowRight" ? 1 : -1));
       return;
     }
 
     trapFocus(event);
 
     // "/" 聚焦提问框；输入态里不劫持
-    const tag = document.activeElement?.tagName;
     if (event.key === "/" && tag !== "INPUT" && tag !== "TEXTAREA") {
       event.preventDefault();
       $("chatInput").focus();
@@ -1852,6 +3320,26 @@ function wireInteractions() {
 
   window.addEventListener("resize", movePeriodThumb);
 
+  $("decisionFeed").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-decision-action]");
+    if (!button) return;
+    const { decisionAction, category, merchant, uid, mode, question } = button.dataset;
+    if (decisionAction === "ask") {
+      askFromInsight(question);
+      return;
+    }
+    if (decisionAction === "evidence") {
+      openEvidence(uid);
+      return;
+    }
+    if (decisionAction === "trend") {
+      if (mode) state.trendMode = mode;
+      openModal("trendModal");
+      return;
+    }
+    if (decisionAction === "ledger") focusLedger({ category, merchant });
+  });
+
   $("filterBar").addEventListener("click", (event) => {
     const button = event.target.closest("button");
     if (!button) return;
@@ -1861,7 +3349,26 @@ function wireInteractions() {
       window.refreshCfoMotion?.({ scope: "ledger", quiet: true });
       return;
     }
+    if (button.hasAttribute("data-clear-range")) {
+      state.dateRange = null;
+      state.ledgerPage = 1;
+      renderFilters();
+      renderTransactions();
+      window.refreshCfoMotion?.({ scope: "ledger" });
+      return;
+    }
+    if (button.hasAttribute("data-clear-merchant")) {
+      state.merchantFocus = "";
+      state.ledgerPage = 1;
+      renderFilters();
+      renderTransactions();
+      window.refreshCfoMotion?.({ scope: "ledger" });
+      return;
+    }
     if (!button.dataset.filter) return;
+    // 手动选分类＝重新划定范围，之前带过来的商户和时间区间约束到此为止。
+    state.merchantFocus = "";
+    state.dateRange = null;
     state.filter = button.dataset.filter;
     state.ledgerFilterExpanded = false;
     state.ledgerPage = 1;
@@ -1873,11 +3380,25 @@ function wireInteractions() {
   // 空态里的「查看全部分类」也走同一条路径
   $("transactionList").addEventListener("click", (event) => {
     const button = event.target.closest("[data-filter]");
-    if (!button) return;
-    state.filter = button.dataset.filter;
-    state.ledgerPage = 1;
-    renderFilters();
-    renderTransactions();
+    if (button) {
+      state.filter = button.dataset.filter;
+      state.merchantFocus = "";
+      state.dateRange = null;
+      state.ledgerPage = 1;
+      renderFilters();
+      renderTransactions();
+      return;
+    }
+    const transaction = event.target.closest("[data-transaction-uid]");
+    if (transaction) openEvidence(transaction.dataset.transactionUid);
+  });
+
+  $("transactionList").addEventListener("keydown", (event) => {
+    if (!['Enter', ' '].includes(event.key)) return;
+    const transaction = event.target.closest("[data-transaction-uid]");
+    if (!transaction) return;
+    event.preventDefault();
+    openEvidence(transaction.dataset.transactionUid);
   });
 
   // 捕获阶段：#filterBar 自己的处理器会重建 innerHTML，冒泡时 target 已脱离文档，
@@ -1987,28 +3508,14 @@ async function boot() {
   const dataReady = loadSnapshot().then(() => {
     renderAll();
     if (!$("trendModal").hidden) renderTrendModal();
+    fetchProfileReportMetadata().catch(() => {});
   });
   window.cfoDataReady = dataReady;
 
-  addMessage("agent", "账本已经同步好了。可以问我今日支出、本月最大一笔、预算使用率，或者最近外卖和奶茶的频率。");
+  addMessage("agent", "账本已经同步好了，你可以来咨询任何一笔消费，尽管来问吧🤗");
   wireInteractions();
   window.initCfoMotion?.();
   await dataReady;
-
-  let failures = 0;
-  window.setInterval(async () => {
-    try {
-      await loadSnapshot();
-      renderAll();
-      if (!$("trendModal").hidden) renderTrendModal();
-      window.refreshCfoMotion?.({ quiet: true });
-      failures = 0;
-    } catch (error) {
-      failures += 1;
-      console.warn("snapshot refresh failed", error);
-      if (failures === 1) showToast("账本刷新失败，将继续重试", "error");
-    }
-  }, 30000);
 }
 
 boot().catch((error) => {

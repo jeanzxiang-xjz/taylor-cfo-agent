@@ -148,6 +148,8 @@ def ensure_bill_tables(conn: sqlite3.Connection) -> None:
             "classification_confidence": "real not null default 0",
             "classification_status": "text not null default 'resolved'",
             "classification_reason": "text",
+            # 试过几次。到上限还没结论就落成「未分类」，不能永远挂在 pending。
+            "classification_attempts": "integer not null default 0",
             "parse_warnings": "text not null default '[]'",
         },
     )

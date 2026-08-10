@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
 import http.cookies
 import json
+import mimetypes
 import os
 import secrets
 import sqlite3
+import statistics
 import sys
 import urllib.error
 import urllib.request
@@ -14,7 +17,7 @@ from datetime import datetime, timedelta
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 from generate_snapshot import build_payload
 
@@ -42,17 +45,23 @@ if str(ROOT_DIR) not in sys.path:
 DB_PATH = Path(os.environ.get("CFO_DB_PATH") or ROOT_DIR / "data" / "cfo.sqlite")
 DEMO_MODE = os.environ.get("CFO_DEMO") == "1"
 OWNER_NAME = os.environ.get("CFO_OWNER_NAME", "").strip() or "用户"
+# 链路耗时追踪。默认关闭：这些日志会把工具调用参数打到标准输出，
+# 而参数里带着用户的查询内容，不该在别人跑这个项目时默认刷屏。
+DEBUG_TRACE = os.environ.get("CFO_DEBUG") == "1"
 
 from mail_sync import DEFAULT_SUBJECT, connect_imap, process_mailbox_once_detailed, safe_logout
 from bill_store import ensure_bill_tables
-from classification_service import start_background_enrichment
+from classification_service import settle_stuck_transactions, start_background_enrichment
 
 PROMPT_PATH = ROOT_DIR / "prompts" / "cfo_system_prompt.md"
+PROFILE_REPORT_PROMPT_PATH = ROOT_DIR / "prompts" / "profile_report_prompt.md"
+PROFILE_REPORT_VERSION = "profile-v5"
 DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
 DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
 DEEPSEEK_THINKING = os.environ.get("DEEPSEEK_THINKING", "disabled")
 DEEPSEEK_REASONING_EFFORT = os.environ.get("DEEPSEEK_REASONING_EFFORT", "high")
 CHAT_TIMEOUT_SECONDS = float(os.environ.get("CFO_CHAT_TIMEOUT_SECONDS", "45"))
+PROFILE_REPORT_TIMEOUT_SECONDS = float(os.environ.get("CFO_PROFILE_REPORT_TIMEOUT_SECONDS", "90"))
 MAX_CONTEXT_TRANSACTIONS = 40
 SYNC_TIMEOUT_SECONDS = float(os.environ.get("CFO_MAIL_SYNC_TIMEOUT_SECONDS", "90"))
 SYNC_MAX_CANDIDATES = int(os.environ.get("CFO_MAIL_SYNC_MAX_CANDIDATES", "20"))
@@ -62,13 +71,75 @@ MAX_REQUEST_BODY_BYTES = int(os.environ.get("CFO_MAX_REQUEST_BODY_BYTES", "12000
 MAX_CHAT_MESSAGE_CHARS = int(os.environ.get("CFO_MAX_CHAT_MESSAGE_CHARS", "600"))
 CLASSIFICATION_TIMEOUT_SECONDS = float(os.environ.get("CFO_CLASSIFICATION_TIMEOUT_SECONDS", "12"))
 
+PROFILE_CATEGORY_LABELS = {
+    "coffee_tea": "咖啡/奶茶",
+    "food_delivery": "外卖/餐饮",
+    "parking": "停车交通",
+    "car_charging": "车辆充电",
+    "auto": "爱车养车",
+    "groceries": "超市便利",
+    "fruit": "水果鲜果",
+    "bakery": "烘焙面包",
+    "education": "教育考试",
+    "books": "图书书店",
+    "ecommerce": "网购",
+    "transport": "交通",
+    "healthcare": "医疗",
+    "investment": "投资理财",
+    "property": "物业生活",
+    "telecom": "通信充值",
+    "entertainment": "演出票务",
+    "credit_repayment": "信用借还",
+    "utilities": "水电燃缴费",
+    "stationery": "文具用品",
+    "digital_services": "数字服务",
+    "general_shopping": "日常购物",
+    "leisure_travel": "旅行休闲",
+    "lottery": "彩票",
+    "personal_transfer": "个人转账",
+    "uncategorized": "未分类",
+}
+
+READY_FOOD_DRINK_CATEGORIES = {"food_delivery", "coffee_tea", "bakery"}
+FOOD_PATTERN_RULES = (
+    {
+        "key": "barbecue_grill",
+        "label": "烧烤/烤串线索",
+        "keywords": ("烧烤", "烤串", "串串", "烤肉", "炭火烤", "烤翅", "烧肉"),
+    },
+    {
+        "key": "fried_fast_food",
+        "label": "炸物/快餐线索",
+        "keywords": (
+            "炸鸡", "炸串", "汉堡", "薯条", "披萨", "方便面", "泡面", "鸡柳",
+            "肯德基", "麦当劳", "汉堡王", "华莱士",
+        ),
+    },
+    {
+        "key": "sweet_drinks_desserts",
+        "label": "甜饮/甜品线索",
+        "keywords": (
+            "奶茶", "果茶", "可乐", "汽水", "冰淇淋", "甜品", "蛋糕", "沪上阿姨",
+            "果呀呀", "喜茶", "奈雪", "茶百道", "古茗", "蜜雪冰城", "益禾堂", "一点点",
+        ),
+    },
+    {
+        "key": "rich_flavor_takeout",
+        "label": "重口外食线索",
+        "keywords": (
+            "盖码饭", "拌饭", "小炒", "黄焖鸡", "辣椒炒肉", "海底捞", "湘菜",
+            "炒肉", "鸡柳", "抓饭", "泡面",
+        ),
+    },
+)
+
 TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
             "name": "query_spending_summary",
             "description": (
-                "按时间区间查询支出汇总统计。支持按分类、日、周、月聚合。"
+                "按时间区间查询支出汇总统计。支持按分类、消费时段、日、周、月聚合。"
                 "用于回答花了多少、哪个分类最多、对比两个时段等问题。"
                 "可多次调用以对比不同时段（如本月 vs 上月）。"
             ),
@@ -85,8 +156,32 @@ TOOL_DEFINITIONS = [
                     },
                     "group_by": {
                         "type": "string",
-                        "enum": ["category", "day", "week", "month"],
-                        "description": "聚合维度。不传只返回总计；category 按分类拆分；day/week/month 按时间段拆分。",
+                        "enum": ["category", "time_slot", "day", "week", "month"],
+                        "description": "聚合维度。不传只返回总计；category 按分类拆分；time_slot 按早餐前/白天/晚间/深夜拆分；day/week/month 按日期拆分。",
+                    },
+                },
+                "required": ["start_date", "end_date"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_lifestyle_health_signals",
+            "description": (
+                "按时间区间提取饮食付款时段、夜间餐饮，以及烧烤、炸物快餐、甜饮甜品等消费线索。"
+                "用于消费分析中推测作息与饮食习惯。返回的是账单线索而非医学结论。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "start_date": {
+                        "type": "string",
+                        "description": "查询开始日期（含），格式 YYYY-MM-DD 或 YYYY-MM-DDTHH:MM:SS",
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "description": "查询结束日期（不含），格式 YYYY-MM-DD 或 YYYY-MM-DDTHH:MM:SS",
                     },
                 },
                 "required": ["start_date", "end_date"],
@@ -412,6 +507,574 @@ def load_system_prompt() -> str:
     return prompt.replace("{{OWNER_NAME}}", OWNER_NAME)
 
 
+def load_profile_report_prompt() -> str:
+    if PROFILE_REPORT_PROMPT_PATH.exists():
+        prompt = PROFILE_REPORT_PROMPT_PATH.read_text(encoding="utf-8").strip()
+    else:
+        prompt = "请根据账本聚合特征生成有趣、克制且有证据的消费人格报告，并只返回 JSON。"
+    return prompt.replace("{{OWNER_NAME}}", OWNER_NAME)
+
+
+def _profile_outflows() -> list[dict]:
+    rows = []
+    for tx in build_payload().get("transactions", []):
+        if tx.get("direction") == "inflow" or tx.get("status") == "failed":
+            continue
+        paid_at = parse_paid_at(tx.get("paid_at"))
+        try:
+            amount = abs(float(tx.get("amount") or 0))
+        except (TypeError, ValueError):
+            amount = 0
+        if paid_at is None or amount <= 0:
+            continue
+        rows.append({**tx, "_paid_at": paid_at, "_amount": round(amount, 2)})
+    return sorted(rows, key=lambda item: (item["_paid_at"], item.get("transaction_uid") or ""))
+
+
+def build_lifestyle_health_features(transactions: list[dict]) -> dict:
+    """把付款时间与餐饮类型组合成可核对的生活健康线索。
+
+    这里不直接判断健康状况：付款时间未必等于进食时间，商户名和商品词也不能
+    代替营养成分。函数只负责提供给模型可复核的时段、频次和关键词证据。
+    """
+    slots = {
+        "breakfast_reference": {"label": "早餐参考时段（5-10点）", "count": 0, "amount_cny": 0.0},
+        "lunch_reference": {"label": "午餐参考时段（10-15点）", "count": 0, "amount_cny": 0.0},
+        "afternoon": {"label": "下午（15-17点）", "count": 0, "amount_cny": 0.0},
+        "dinner_reference": {"label": "晚餐参考时段（17-21点）", "count": 0, "amount_cny": 0.0},
+        "late_night": {"label": "夜间（21-次日5点）", "count": 0, "amount_cny": 0.0},
+    }
+    pattern_groups = {
+        rule["key"]: {
+            "key": rule["key"],
+            "label": rule["label"],
+            "count": 0,
+            "amount_cny": 0.0,
+            "late_night_count": 0,
+            "examples": [],
+        }
+        for rule in FOOD_PATTERN_RULES
+    }
+    food_rows = []
+    late_rows = []
+    pattern_matched_indexes: set[int] = set()
+    active_days = set()
+
+    for index, tx in enumerate(transactions):
+        if tx.get("direction") == "inflow" or tx.get("status") == "failed":
+            continue
+        paid_at = tx.get("_paid_at")
+        if not isinstance(paid_at, datetime):
+            paid_at = parse_paid_at(tx.get("paid_at"))
+        try:
+            amount = abs(float(tx.get("_amount", tx.get("amount", 0)) or 0))
+        except (TypeError, ValueError):
+            amount = 0
+        if paid_at is None or amount <= 0:
+            continue
+
+        category = tx.get("category") or "uncategorized"
+        merchant = str(tx.get("merchant") or "").strip()
+        product = str(tx.get("product") or tx.get("thing") or "").strip()
+        searchable = " ".join(part for part in (merchant, product) if part).lower()
+        matched_rules = [
+            rule
+            for rule in FOOD_PATTERN_RULES
+            if searchable and any(keyword.lower() in searchable for keyword in rule["keywords"])
+        ]
+        is_ready_food_drink = category in READY_FOOD_DRINK_CATEGORIES or bool(matched_rules)
+        if not is_ready_food_drink:
+            continue
+
+        hour = paid_at.hour
+        if hour < 5 or hour >= 21:
+            slot_key = "late_night"
+        elif hour < 10:
+            slot_key = "breakfast_reference"
+        elif hour < 15:
+            slot_key = "lunch_reference"
+        elif hour < 17:
+            slot_key = "afternoon"
+        else:
+            slot_key = "dinner_reference"
+
+        row = {
+            "paid_at": paid_at.isoformat(timespec="minutes"),
+            "merchant": merchant or product or "未知商户",
+            "category": PROFILE_CATEGORY_LABELS.get(category, category),
+            "amount_cny": round(amount, 2),
+        }
+        food_rows.append(row)
+        active_days.add(paid_at.date().isoformat())
+        slots[slot_key]["count"] += 1
+        slots[slot_key]["amount_cny"] += amount
+        if slot_key == "late_night":
+            late_rows.append(row)
+
+        for rule in matched_rules:
+            group = pattern_groups[rule["key"]]
+            group["count"] += 1
+            group["amount_cny"] += amount
+            if slot_key == "late_night":
+                group["late_night_count"] += 1
+            example = merchant or product
+            if example and example not in group["examples"] and len(group["examples"]) < 3:
+                group["examples"].append(example)
+            pattern_matched_indexes.add(index)
+
+    food_count = len(food_rows)
+    food_total = round(sum(row["amount_cny"] for row in food_rows), 2)
+    for slot in slots.values():
+        slot["amount_cny"] = round(slot["amount_cny"], 2)
+        slot["count_share_percent"] = round(slot["count"] / food_count * 100, 1) if food_count else 0
+
+    food_type_signals = []
+    for group in pattern_groups.values():
+        if not group["count"]:
+            continue
+        group["amount_cny"] = round(group["amount_cny"], 2)
+        group["count_share_percent"] = round(group["count"] / food_count * 100, 1) if food_count else 0
+        food_type_signals.append(group)
+    food_type_signals.sort(key=lambda item: (item["count"], item["amount_cny"]), reverse=True)
+
+    active_day_count = len(active_days)
+    if food_count >= 20 and active_day_count >= 10:
+        sample_confidence = "较高"
+    elif food_count >= 6 and active_day_count >= 3:
+        sample_confidence = "中"
+    else:
+        sample_confidence = "低"
+
+    late_count = len(late_rows)
+    return {
+        "ready_food_drink_payment_count": food_count,
+        "ready_food_drink_total_cny": food_total,
+        "active_day_count": active_day_count,
+        "sample_confidence": sample_confidence,
+        "payment_time_distribution": list(slots.values()),
+        "late_food_drink_payments": {
+            "count": late_count,
+            "amount_cny": round(sum(row["amount_cny"] for row in late_rows), 2),
+            "count_share_percent": round(late_count / food_count * 100, 1) if food_count else 0,
+            "examples": late_rows[-4:],
+        },
+        "food_type_signals": food_type_signals,
+        "potential_less_balanced_food_share": {
+            "matched_transaction_count": len(pattern_matched_indexes),
+            "count_share_percent": round(len(pattern_matched_indexes) / food_count * 100, 1) if food_count else 0,
+            "note": "仅按商户/商品关键词识别烧烤、炸物快餐、甜饮甜品和重口外食线索，不等同于营养成分判断。",
+        },
+        "inference_limits": [
+            "付款时间不等于实际进食、入睡或起床时间。",
+            "外卖、商户名称和商品关键词只能提供饮食线索，不能直接定义为垃圾食品。",
+        ],
+    }
+
+
+def profile_ledger_fingerprint(transactions: list[dict] | None = None) -> str:
+    rows = transactions if transactions is not None else _profile_outflows()
+    material = [
+        {
+            "uid": tx.get("transaction_uid") or "",
+            "paid_at": tx.get("paid_at") or "",
+            "amount": tx.get("_amount", 0),
+            "merchant": tx.get("merchant") or "",
+            "product": tx.get("product") or tx.get("thing") or "",
+            "category": tx.get("category") or "uncategorized",
+            "status": tx.get("status") or "",
+            "classification_status": tx.get("classification_status") or "",
+        }
+        for tx in rows
+    ]
+    encoded = json.dumps(material, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def build_profile_features(transactions: list[dict] | None = None) -> dict:
+    rows = transactions if transactions is not None else _profile_outflows()
+    if not rows:
+        return {
+            "coverage": {"start_date": None, "end_date": None, "transaction_count": 0, "total_outflow_cny": 0, "active_days": 0, "active_months": 0},
+            "amount_profile": {"average_cny": 0, "median_cny": 0, "max_single_cny": 0},
+            "categories": [],
+            "merchants": [],
+            "weekday_distribution": [],
+            "time_distribution": [],
+            "monthly_distribution": [],
+            "representative_transactions": [],
+            "lifestyle_health_features": build_lifestyle_health_features([]),
+        }
+
+    category_groups: dict[str, dict] = {}
+    merchant_groups: dict[str, dict] = {}
+    weekday_groups = {label: {"label": label, "amount_cny": 0.0, "count": 0} for label in ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]}
+    time_groups = {
+        "早餐前": {"label": "早餐前（0-8点）", "amount_cny": 0.0, "count": 0},
+        "白天": {"label": "白天（8-18点）", "amount_cny": 0.0, "count": 0},
+        "晚间": {"label": "晚间（18-22点）", "amount_cny": 0.0, "count": 0},
+        "深夜": {"label": "深夜（22-24点）", "amount_cny": 0.0, "count": 0},
+    }
+    monthly_groups: dict[str, dict] = {}
+    active_days = set()
+    amounts = []
+
+    for tx in rows:
+        paid_at = tx["_paid_at"]
+        amount = tx["_amount"]
+        amounts.append(amount)
+        active_days.add(paid_at.date().isoformat())
+
+        category = tx.get("category") or "uncategorized"
+        category_item = category_groups.setdefault(category, {
+            "key": category,
+            "label": PROFILE_CATEGORY_LABELS.get(category, category),
+            "amount_cny": 0.0,
+            "count": 0,
+        })
+        category_item["amount_cny"] += amount
+        category_item["count"] += 1
+
+        merchant = (tx.get("merchant") or tx.get("product") or tx.get("thing") or "").strip()
+        if merchant:
+            merchant_item = merchant_groups.setdefault(merchant, {
+                "merchant": merchant,
+                "category": PROFILE_CATEGORY_LABELS.get(category, category),
+                "amount_cny": 0.0,
+                "count": 0,
+            })
+            merchant_item["amount_cny"] += amount
+            merchant_item["count"] += 1
+
+        weekday_item = weekday_groups[list(weekday_groups)[paid_at.weekday()]]
+        weekday_item["amount_cny"] += amount
+        weekday_item["count"] += 1
+
+        hour = paid_at.hour
+        time_key = "早餐前" if hour < 8 else "白天" if hour < 18 else "晚间" if hour < 22 else "深夜"
+        time_groups[time_key]["amount_cny"] += amount
+        time_groups[time_key]["count"] += 1
+
+        month_key = paid_at.strftime("%Y-%m")
+        month_item = monthly_groups.setdefault(month_key, {"month": month_key, "amount_cny": 0.0, "count": 0})
+        month_item["amount_cny"] += amount
+        month_item["count"] += 1
+
+    total = round(sum(amounts), 2)
+
+    def finalize(items: list[dict], limit: int | None = None, key: str = "amount_cny") -> list[dict]:
+        ordered = sorted(items, key=lambda item: (item.get(key, 0), item.get("count", 0)), reverse=True)
+        if limit is not None:
+            ordered = ordered[:limit]
+        for item in ordered:
+            if "amount_cny" in item:
+                item["amount_cny"] = round(item["amount_cny"], 2)
+                item["share_percent"] = round(item["amount_cny"] / total * 100, 1) if total else 0
+        return ordered
+
+    top_merchants = finalize(list(merchant_groups.values()), 10)
+    largest_rows = sorted(rows, key=lambda item: item["_amount"], reverse=True)[:6]
+    representative = []
+    seen_uids = set()
+    for tx in largest_rows:
+        uid = tx.get("transaction_uid") or f"{tx.get('paid_at')}-{tx.get('_amount')}"
+        if uid in seen_uids:
+            continue
+        seen_uids.add(uid)
+        representative.append({
+            "paid_at": tx.get("paid_at"),
+            "merchant": tx.get("merchant") or tx.get("product") or tx.get("thing") or "未知商户",
+            "category": PROFILE_CATEGORY_LABELS.get(tx.get("category") or "uncategorized", tx.get("category") or "未分类"),
+            "amount_cny": tx["_amount"],
+        })
+
+    return {
+        "coverage": {
+            "start_date": rows[0]["_paid_at"].date().isoformat(),
+            "end_date": rows[-1]["_paid_at"].date().isoformat(),
+            "transaction_count": len(rows),
+            "total_outflow_cny": total,
+            "active_days": len(active_days),
+            "active_months": len(monthly_groups),
+        },
+        "amount_profile": {
+            "average_cny": round(statistics.fmean(amounts), 2),
+            "median_cny": round(statistics.median(amounts), 2),
+            "max_single_cny": round(max(amounts), 2),
+        },
+        "categories": finalize(list(category_groups.values()), 10),
+        "merchants": top_merchants,
+        "weekday_distribution": finalize(list(weekday_groups.values())),
+        "time_distribution": finalize(list(time_groups.values())),
+        "monthly_distribution": sorted(finalize(list(monthly_groups.values())), key=lambda item: item["month"])[-36:],
+        "representative_transactions": representative,
+        "lifestyle_health_features": build_lifestyle_health_features(rows),
+    }
+
+
+def _report_text(value: object, max_length: int) -> str:
+    text = " ".join(str(value or "").strip().split())
+    return text[:max_length]
+
+
+def normalize_profile_report(raw: object, features: dict) -> dict:
+    if not isinstance(raw, dict):
+        raise ValueError("报告不是 JSON 对象")
+    persona = raw.get("persona") if isinstance(raw.get("persona"), dict) else {}
+    title = _report_text(persona.get("title"), 24)
+    subtitle = _report_text(persona.get("subtitle"), 48)
+    intro = _report_text(persona.get("intro") or persona.get("summary"), 64)
+    if not title or not intro:
+        raise ValueError("报告缺少人格标题或短导语")
+
+    def normalize_items(name: str, minimum: int, maximum: int, fields: tuple[tuple[str, int], ...]) -> list[dict]:
+        source = raw.get(name) if isinstance(raw.get(name), list) else []
+        items = []
+        for source_item in source[:maximum]:
+            if not isinstance(source_item, dict):
+                continue
+            item = {field: _report_text(source_item.get(field), length) for field, length in fields}
+            if all(item.values()):
+                items.append(item)
+        if len(items) < minimum:
+            raise ValueError(f"报告的 {name} 数量不足")
+        return items
+
+    def normalize_nested_items(source: object, minimum: int, maximum: int, fields: tuple[tuple[str, int], ...]) -> list[dict]:
+        items = []
+        for source_item in (source if isinstance(source, list) else [])[:maximum]:
+            if not isinstance(source_item, dict):
+                continue
+            item = {field: _report_text(source_item.get(field), length) for field, length in fields}
+            if all(item.values()):
+                items.append(item)
+        if len(items) < minimum:
+            raise ValueError("报告的分段要点数量不足")
+        return items
+
+    traits = normalize_nested_items(
+        persona.get("traits"),
+        2,
+        3,
+        (("emoji", 4), ("label", 12), ("text", 54), ("evidence", 56)),
+    )
+    tags = normalize_items("tags", 3, 5, (("emoji", 4), ("label", 12), ("reason", 54), ("evidence", 56)))
+    highlights = normalize_items("highlights", 3, 3, (("emoji", 4), ("value", 24), ("label", 20), ("context", 54)))
+
+    moments_source = raw.get("moments") if isinstance(raw.get("moments"), list) else []
+    moments = []
+    for source_item in moments_source[:3]:
+        if not isinstance(source_item, dict):
+            continue
+        lines = [
+            _report_text(line, 56)
+            for line in (source_item.get("lines") if isinstance(source_item.get("lines"), list) else [])[:2]
+            if _report_text(line, 56)
+        ]
+        if not lines and _report_text(source_item.get("detail"), 56):
+            lines = [_report_text(source_item.get("detail"), 56)]
+        moment = {
+            "emoji": _report_text(source_item.get("emoji"), 4),
+            "title": _report_text(source_item.get("title"), 28),
+            "lines": lines,
+            "evidence": _report_text(source_item.get("evidence"), 64),
+        }
+        if moment["emoji"] and moment["title"] and moment["lines"] and moment["evidence"]:
+            moments.append(moment)
+    if len(moments) < 2:
+        raise ValueError("报告的 moments 数量不足")
+
+    wellbeing_source = raw.get("wellbeing") if isinstance(raw.get("wellbeing"), dict) else {}
+
+    def normalize_confidence(value: object) -> str:
+        text = _report_text(value, 8)
+        if text in {"较高", "高"}:
+            return "较高"
+        if text in {"中", "中等"}:
+            return "中"
+        return "低"
+
+    wellbeing_headline = _report_text(wellbeing_source.get("headline"), 48)
+    wellbeing_summary = _report_text(wellbeing_source.get("summary"), 96)
+    wellbeing_reminder = _report_text(wellbeing_source.get("reminder"), 72)
+    wellbeing_disclaimer = _report_text(wellbeing_source.get("disclaimer"), 96)
+    wellbeing_signals = []
+    for source_item in (wellbeing_source.get("signals") if isinstance(wellbeing_source.get("signals"), list) else [])[:3]:
+        if not isinstance(source_item, dict):
+            continue
+        signal = {
+            "label": _report_text(source_item.get("label"), 16),
+            "inference": _report_text(source_item.get("inference"), 64),
+            "evidence": _report_text(source_item.get("evidence"), 72),
+            "confidence": normalize_confidence(source_item.get("confidence")),
+        }
+        if signal["label"] and signal["inference"] and signal["evidence"]:
+            wellbeing_signals.append(signal)
+    if (
+        not wellbeing_headline
+        or not wellbeing_summary
+        or len(wellbeing_signals) < 2
+        or not wellbeing_reminder
+        or not wellbeing_disclaimer
+    ):
+        raise ValueError("报告缺少生活健康画像")
+
+    cfo = raw.get("cfo") if isinstance(raw.get("cfo"), dict) else {}
+    headline = _report_text(cfo.get("headline") or cfo.get("verdict"), 64)
+    takeaways = normalize_nested_items(
+        cfo.get("takeaways"),
+        2,
+        2,
+        (("emoji", 4), ("label", 12), ("text", 64)),
+    )
+    suggestions = [_report_text(item, 64) for item in (cfo.get("suggestions") or []) if _report_text(item, 64)][:2]
+    if not headline or not suggestions:
+        raise ValueError("报告缺少 CFO 总结")
+
+    return {
+        "persona": {"title": title, "subtitle": subtitle, "intro": intro, "traits": traits},
+        "tags": tags,
+        "highlights": highlights,
+        "moments": moments,
+        "wellbeing": {
+            "headline": wellbeing_headline,
+            "summary": wellbeing_summary,
+            "confidence": normalize_confidence(wellbeing_source.get("confidence")),
+            "signals": wellbeing_signals,
+            "reminder": wellbeing_reminder,
+            "disclaimer": wellbeing_disclaimer,
+        },
+        "cfo": {"headline": headline, "takeaways": takeaways, "suggestions": suggestions},
+        "coverage": features["coverage"],
+    }
+
+
+def _parse_profile_json(content: str) -> dict:
+    candidate = content.strip()
+    if candidate.startswith("```"):
+        lines = candidate.splitlines()
+        candidate = "\n".join(lines[1:-1]).strip()
+    try:
+        return json.loads(candidate)
+    except json.JSONDecodeError:
+        start = candidate.find("{")
+        end = candidate.rfind("}")
+        if start >= 0 and end > start:
+            return json.loads(candidate[start:end + 1])
+        raise
+
+
+def call_profile_report_deepseek(features: dict) -> dict:
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
+    if not api_key:
+        return {"ok": False, "code": "missing_api_key", "answer": "DeepSeek API Key 还没有配置，暂时无法生成账单人格报告。"}
+
+    request_body: dict = {
+        "model": DEEPSEEK_MODEL,
+        "messages": [
+            {"role": "system", "content": load_profile_report_prompt()},
+            {"role": "user", "content": "以下是本机基于全部有效支出生成的统计特征：\n" + json.dumps(features, ensure_ascii=False)},
+        ],
+        "temperature": 0.72,
+        "response_format": {"type": "json_object"},
+        "stream": False,
+    }
+    body = json.dumps(request_body, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        f"{DEEPSEEK_BASE_URL}/chat/completions",
+        data=body,
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=PROFILE_REPORT_TIMEOUT_SECONDS) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        report = normalize_profile_report(_parse_profile_json(content), features)
+        return {"ok": True, "model": data.get("model", DEEPSEEK_MODEL), "report": report}
+    except urllib.error.HTTPError as exc:
+        return {"ok": False, "code": "deepseek_http_error", "answer": f"DeepSeek 返回 HTTP {exc.code}，请检查模型配置后重试。"}
+    except (json.JSONDecodeError, ValueError, KeyError) as exc:
+        return {"ok": False, "code": "profile_report_invalid", "answer": f"这次画像没有整理成可展示的结构：{exc}。请重新生成。"}
+    except Exception as exc:
+        return {"ok": False, "code": "deepseek_request_failed", "answer": safe_error_message("账单人格报告生成失败", exc)}
+
+
+def latest_profile_report() -> dict:
+    transactions = _profile_outflows()
+    fingerprint = profile_ledger_fingerprint(transactions)
+    features = build_profile_features(transactions)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "select report_json, ledger_fingerprint, model, generated_at from profile_reports where prompt_version = ? order by generated_at desc limit 1",
+            (PROFILE_REPORT_VERSION,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return {"ok": True, "has_report": False, "stale": False, "fingerprint": fingerprint, "coverage": features["coverage"]}
+    try:
+        report = json.loads(row["report_json"])
+    except json.JSONDecodeError:
+        return {"ok": True, "has_report": False, "stale": False, "fingerprint": fingerprint, "coverage": features["coverage"]}
+    return {
+        "ok": True,
+        "has_report": True,
+        "stale": row["ledger_fingerprint"] != fingerprint,
+        "fingerprint": fingerprint,
+        "report": report,
+        "model": row["model"],
+        "generated_at": row["generated_at"],
+    }
+
+
+def generate_profile_report(force: bool = False) -> dict:
+    transactions = _profile_outflows()
+    features = build_profile_features(transactions)
+    fingerprint = profile_ledger_fingerprint(transactions)
+    if not transactions:
+        return {"ok": False, "code": "empty_ledger", "answer": "账本里还没有可用于生成画像的支出记录。"}
+
+    if not force:
+        cached = latest_profile_report()
+        if cached.get("has_report") and not cached.get("stale"):
+            return {**cached, "cached": True}
+
+    generated = call_profile_report_deepseek(features)
+    if not generated.get("ok"):
+        return generated
+
+    generated_at = datetime.now().isoformat(timespec="seconds")
+    report = {**generated["report"], "generated_at": generated_at}
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(
+            """
+            insert into profile_reports (ledger_fingerprint, prompt_version, report_json, model, generated_at)
+            values (?, ?, ?, ?, ?)
+            on conflict(ledger_fingerprint, prompt_version) do update set
+                report_json = excluded.report_json,
+                model = excluded.model,
+                generated_at = excluded.generated_at
+            """,
+            (fingerprint, PROFILE_REPORT_VERSION, json.dumps(report, ensure_ascii=False), generated.get("model"), generated_at),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {
+        "ok": True,
+        "has_report": True,
+        "stale": False,
+        "cached": False,
+        "fingerprint": fingerprint,
+        "report": report,
+        "model": generated.get("model"),
+        "generated_at": generated_at,
+    }
+
+
 PERIOD_LABELS = {
     "today": "今日",
     "week": "本周",
@@ -506,11 +1169,16 @@ def get_orientation_context(period: str, budgets: dict | None = None) -> dict:
     query_args = {"start_date": period_range["start"], "end_date": period_range["end"]}
     summary = _tool_query_spending_summary(query_args)
     grouped = _tool_query_spending_summary({**query_args, "group_by": "category"})
+    time_grouped = _tool_query_spending_summary({**query_args, "group_by": "time_slot"})
+    lifestyle_health = _tool_query_lifestyle_health_signals(query_args)
     if "error" not in summary:
         top_categories = grouped.get("rows", [])[:5] if "error" not in grouped else []
+        time_distribution = time_grouped.get("rows", []) if "error" not in time_grouped else []
         context["current_period_summary"] = {
             **summary.get("summary", {}),
             "top_categories": top_categories,
+            "time_distribution": time_distribution,
+            "lifestyle_health_features": lifestyle_health.get("features", {}) if "error" not in lifestyle_health else {},
         }
     return context
 
@@ -552,6 +1220,17 @@ def _tool_query_spending_summary(args: dict) -> dict:
         if group_by == "category":
             group_expr = "category"
             select_col = "category"
+        elif group_by == "time_slot":
+            time_slot_expr = (
+                "CASE "
+                "WHEN strftime('%H', paid_at) IS NULL THEN '时间未知' "
+                "WHEN CAST(strftime('%H', paid_at) AS INTEGER) < 8 THEN '早餐前（0-8点）' "
+                "WHEN CAST(strftime('%H', paid_at) AS INTEGER) < 18 THEN '白天（8-18点）' "
+                "WHEN CAST(strftime('%H', paid_at) AS INTEGER) < 22 THEN '晚间（18-22点）' "
+                "ELSE '深夜（22-24点）' END"
+            )
+            group_expr = time_slot_expr
+            select_col = time_slot_expr
         elif group_by == "day":
             group_expr = "date(paid_at)"
             select_col = "date(paid_at)"
@@ -594,6 +1273,33 @@ def _tool_query_spending_summary(args: dict) -> dict:
                 for r in rows
             ],
             "note": "区间总计请引用顶层 total（total_outflow_cny / outflow_transaction_count），勿对 rows 自行加总。",
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def _tool_query_lifestyle_health_signals(args: dict) -> dict:
+    import sqlite3 as _sqlite3
+    start_date = args.get("start_date", "")
+    end_date = args.get("end_date", "")
+    if not start_date or not end_date:
+        return {"error": "start_date 和 end_date 为必填项"}
+    try:
+        conn = _sqlite3.connect(str(DB_PATH))
+        conn.row_factory = _sqlite3.Row
+        rows = conn.execute(
+            "SELECT paid_at, merchant, product, thing, category, amount, direction, status "
+            "FROM transactions "
+            "WHERE paid_at >= ? AND paid_at < ? "
+            "AND direction = 'outflow' AND COALESCE(status, '') != 'failed' "
+            "ORDER BY paid_at ASC",
+            [start_date, end_date],
+        ).fetchall()
+        conn.close()
+        return {
+            "period": {"start": start_date, "end": end_date},
+            "features": build_lifestyle_health_features([dict(row) for row in rows]),
+            "note": "这是基于付款时间和消费类型的生活健康线索，不是医学诊断；推断时必须同时展示证据与可信度。",
         }
     except Exception as exc:
         return {"error": str(exc)}
@@ -663,6 +1369,8 @@ def _tool_search_transactions(args: dict) -> dict:
 def execute_tool(name: str, args: dict) -> dict:
     if name == "query_spending_summary":
         return _tool_query_spending_summary(args)
+    if name == "query_lifestyle_health_signals":
+        return _tool_query_lifestyle_health_signals(args)
     if name == "search_transactions":
         return _tool_search_transactions(args)
     return {"error": f"未知工具：{name}"}
@@ -698,6 +1406,22 @@ CATEGORY_LABELS = {
 }
 
 
+def _demo_lifestyle_tip(features: dict) -> str:
+    """用演示账本的组合线索给出一条克制提醒，不把推测写成诊断。"""
+    late = features.get("late_food_drink_payments") or {}
+    if late.get("count", 0) > 0:
+        return (
+            f"🌿 生活提醒：本期有 {late['count']} 笔餐饮或饮品付款落在夜间；"
+            "若多为即时消费，可以尝试把最后一餐或最后一杯提前。"
+        )
+
+    signals = features.get("food_type_signals") or []
+    if not signals:
+        return ""
+    signal = signals[0]
+    return f"🌿 生活提醒：账单里有 {signal['count']} 笔{signal['label']}；下次点单时给清淡、少糖或少油的选项留一个位置。"
+
+
 def demo_answer(message: str, period: str) -> dict:
     """Demo 模式且未配置 LLM Key 时的兜底回答：直接查询演示账本并模板化输出。"""
     period_range = compute_period_date_range(period)
@@ -708,6 +1432,7 @@ def demo_answer(message: str, period: str) -> dict:
     query_args = {"start_date": period_range["start"], "end_date": period_range["end"]}
     summary = _tool_query_spending_summary(query_args).get("summary", {})
     grouped = _tool_query_spending_summary({**query_args, "group_by": "category"})
+    lifestyle_health = _tool_query_lifestyle_health_signals(query_args)
     label = PERIOD_LABELS.get(period, "全部")
 
     lines = []
@@ -731,6 +1456,11 @@ def demo_answer(message: str, period: str) -> dict:
             tx = hits[0]
             paid_day = (tx.get("paid_at") or "")[:10]
             lines.append(f"最大单笔：¥{max_out:.2f}，{tx.get('merchant') or tx.get('thing') or '未知商户'}（{paid_day}）。")
+
+    if any(keyword in message for keyword in ("分析", "消费情况", "消费习惯", "消费健康", "生活")):
+        lifestyle_tip = _demo_lifestyle_tip(lifestyle_health.get("features", {})) if "error" not in lifestyle_health else ""
+        if lifestyle_tip:
+            lines.append(lifestyle_tip)
 
     lines.append("——以上是 Demo 模式的内置分析（当前展示的均为虚构数据）。配置 DEEPSEEK_API_KEY 后，可用自然语言向真实 LLM 追问任何账本问题。")
     return {
@@ -819,18 +1549,20 @@ def call_deepseek(message: str, period: str, history: list[dict], budgets: dict 
         finish_reason = choice.get("finish_reason", "stop")
         assistant_message = choice.get("message", {})
         usage = data.get("usage", {})
-        print(
-            f"[CFO] round={round_idx+1} api={t_api_elapsed:.2f}s "
-            f"finish={finish_reason} "
-            f"prompt_tokens={usage.get('prompt_tokens','-')} "
-            f"completion_tokens={usage.get('completion_tokens','-')}",
-            flush=True,
-        )
+        if DEBUG_TRACE:
+            print(
+                f"[CFO] round={round_idx+1} api={t_api_elapsed:.2f}s "
+                f"finish={finish_reason} "
+                f"prompt_tokens={usage.get('prompt_tokens','-')} "
+                f"completion_tokens={usage.get('completion_tokens','-')}",
+                flush=True,
+            )
         messages.append(assistant_message)
 
         if finish_reason != "tool_calls":
             answer = (assistant_message.get("content") or "").strip()
-            print(f"[CFO] total={_time.monotonic()-t_total_start:.2f}s rounds={round_idx+1}", flush=True)
+            if DEBUG_TRACE:
+                print(f"[CFO] total={_time.monotonic()-t_total_start:.2f}s rounds={round_idx+1}", flush=True)
             return {
                 "ok": True,
                 "model": data.get("model", DEEPSEEK_MODEL),
@@ -846,7 +1578,8 @@ def call_deepseek(message: str, period: str, history: list[dict], budgets: dict 
                 tool_args = {}
             t_tool_start = _time.monotonic()
             result = execute_tool(tool_name, tool_args)
-            print(f"[CFO] tool={tool_name} args={tool_args} took={_time.monotonic()-t_tool_start:.3f}s", flush=True)
+            if DEBUG_TRACE:
+                print(f"[CFO] tool={tool_name} args={tool_args} took={_time.monotonic()-t_tool_start:.3f}s", flush=True)
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.get("id", ""),
@@ -864,10 +1597,103 @@ def transaction_count() -> int:
     return len(build_payload().get("transactions", []))
 
 
+def _safe_capture_image_path(image_path: str | None) -> Path | None:
+    if not image_path:
+        return None
+    candidate = Path(image_path).expanduser()
+    if not candidate.is_absolute():
+        candidate = ROOT_DIR / candidate
+    try:
+        resolved = candidate.resolve(strict=True)
+        data_root = (ROOT_DIR / "data").resolve(strict=True)
+        resolved.relative_to(data_root)
+    except (FileNotFoundError, OSError, ValueError):
+        return None
+    return resolved if resolved.is_file() else None
+
+
+def transaction_evidence(transaction_uid: str) -> dict | None:
+    if not transaction_uid:
+        return None
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            """
+            select t.*, c.ocr_text, c.image_path, c.captured_at
+            from transactions t
+            left join raw_bill_captures c on c.capture_hash = t.raw_capture_hash
+            where t.transaction_uid = ?
+            limit 1
+            """,
+            (transaction_uid,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return None
+
+    record = dict(row)
+    raw_warnings = record.pop("parse_warnings", "[]")
+    try:
+        warnings = json.loads(raw_warnings or "[]")
+    except json.JSONDecodeError:
+        warnings = [str(raw_warnings)] if raw_warnings else []
+    if not isinstance(warnings, list):
+        warnings = [str(warnings)]
+
+    image_path = _safe_capture_image_path(record.pop("image_path", None))
+    capture_ocr_text = record.pop("ocr_text", None)
+    transaction_raw_text = record.pop("raw_text", "")
+    ocr_text = capture_ocr_text or transaction_raw_text
+    record.pop("raw_capture_hash", None)
+    return {
+        "ok": True,
+        "transaction": record,
+        "ocr_text": ocr_text,
+        "parse_warnings": warnings,
+        "image_url": f"/api/transaction-evidence-image?uid={quote(transaction_uid)}" if image_path else None,
+    }
+
+
+def transaction_evidence_image_path(transaction_uid: str) -> Path | None:
+    if not transaction_uid:
+        return None
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        row = conn.execute(
+            """
+            select c.image_path
+            from transactions t
+            join raw_bill_captures c on c.capture_hash = t.raw_capture_hash
+            where t.transaction_uid = ?
+            limit 1
+            """,
+            (transaction_uid,),
+        ).fetchone()
+    finally:
+        conn.close()
+    return _safe_capture_image_path(row[0] if row else None)
+
+
 def ensure_database_schema() -> None:
     conn = sqlite3.connect(DB_PATH)
     try:
         ensure_bill_tables(conn)
+        conn.execute(
+            """
+            create table if not exists profile_reports (
+                id integer primary key autoincrement,
+                ledger_fingerprint text not null,
+                prompt_version text not null,
+                report_json text not null,
+                model text,
+                generated_at text not null,
+                unique (ledger_fingerprint, prompt_version)
+            )
+            """
+        )
+        conn.commit()
     finally:
         conn.close()
 
@@ -1000,7 +1826,8 @@ class CFORequestHandler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:
-        path = urlparse(self.path).path
+        parsed_url = urlparse(self.path)
+        path = parsed_url.path
         if path == "/health":
             self.send_json({"ok": True})
             return
@@ -1025,6 +1852,40 @@ class CFORequestHandler(SimpleHTTPRequestHandler):
                 self.send_json(build_payload())
             except Exception as exc:
                 self.send_json({"ok": False, "error": safe_error_message("账本读取失败", exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        if path == "/api/profile-report":
+            try:
+                self.send_json(latest_profile_report())
+            except Exception as exc:
+                self.send_json({"ok": False, "answer": safe_error_message("账单人格报告读取失败", exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        if path == "/api/transaction-evidence":
+            transaction_uid = parse_qs(parsed_url.query).get("uid", [""])[0]
+            try:
+                payload = transaction_evidence(transaction_uid)
+                if payload is None:
+                    self.send_json({"ok": False, "answer": "没有找到这笔交易。"}, status=HTTPStatus.NOT_FOUND)
+                else:
+                    self.send_json(payload)
+            except Exception as exc:
+                self.send_json({"ok": False, "answer": safe_error_message("交易证据读取失败", exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        if path == "/api/transaction-evidence-image":
+            transaction_uid = parse_qs(parsed_url.query).get("uid", [""])[0]
+            image_path = transaction_evidence_image_path(transaction_uid)
+            if image_path is None:
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            content = image_path.read_bytes()
+            mime_type = mimetypes.guess_type(image_path.name)[0] or "application/octet-stream"
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", mime_type)
+            self.send_header("Content-Length", str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
             return
 
         if not is_public_static_path(path):
@@ -1080,6 +1941,23 @@ class CFORequestHandler(SimpleHTTPRequestHandler):
                 }, status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
 
+
+        if path == "/api/profile-report":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length > MAX_REQUEST_BODY_BYTES:
+                    self.send_json({"ok": False, "answer": "请求内容过长。"}, status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+                    return
+                raw_body = self.rfile.read(length).decode("utf-8")
+                payload = json.loads(raw_body or "{}")
+                result = generate_profile_report(force=bool(payload.get("force")))
+                self.send_json(result, status=HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_GATEWAY)
+            except json.JSONDecodeError:
+                self.send_json({"ok": False, "answer": "请求格式不是合法 JSON。"}, status=HTTPStatus.BAD_REQUEST)
+            except Exception as exc:
+                self.send_json({"ok": False, "answer": safe_error_message("账单人格报告生成失败", exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
         if path != "/api/chat":
             self.send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
             return
@@ -1115,6 +1993,15 @@ def main() -> None:
     args = parser.parse_args()
 
     ensure_database_schema()
+    # 上次进程可能是在分类跑到一半时挂的，那些行会一直停在 pending。
+    # 启动时先收一次尾，保证界面上不会留着「识别中」。
+    if not DEMO_MODE:
+        try:
+            settled = settle_stuck_transactions(DB_PATH)
+            if settled:
+                print(f"[CFO] 结案 {settled} 笔滞留的待分类交易")
+        except Exception as exc:  # 清扫失败不该挡住启动
+            print(f"[CFO] 待分类交易清扫跳过：{type(exc).__name__}")
     trigger_background_classification()
     server = ThreadingHTTPServer((args.host, args.port), CFORequestHandler)
     print(f"Serving CFO web app at http://{args.host}:{args.port}/")
