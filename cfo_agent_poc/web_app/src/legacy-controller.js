@@ -120,6 +120,9 @@ let state = {
   trendSelected: null,
   classificationPendingCount: 0,
   activeEvidenceUid: null,
+  evidencePayload: null,
+  evidenceEditing: false,
+  evidenceSaving: false,
   returnFocusElement: null,
   chatExpanded: false,
   chatReturnFocusElement: null,
@@ -658,8 +661,95 @@ function evidenceSourceLabel(value) {
   return labels[value] || value || "未记录";
 }
 
-function evidenceField(label, value) {
-  return `<div class="evidence-field"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value ?? "未识别")}</strong></div>`;
+function evidenceField(label, value, { edited = false } = {}) {
+  const mark = edited ? `<em class="evidence-edited" title="这个字段被人工校正过">已校正</em>` : "";
+  return `<div class="evidence-field${edited ? " is-edited" : ""}"><span>${escapeHtml(label)}${mark}</span><strong>${escapeHtml(value ?? "未识别")}</strong></div>`;
+}
+
+/* --------------------- 解析字段的人工兜底编辑 --------------------- */
+
+/** 与后端 EDITABLE_FIELDS 一一对应；改这里必须同步改 server.py。 */
+const EVIDENCE_EDIT_FIELDS = [
+  { name: "amount", label: "金额", type: "number", attrs: 'step="0.01" min="0.01" inputmode="decimal" required' },
+  // step=1 保留秒：不带秒的话，光打开再保存就会把秒抹成 00，被记成一次「校正」。
+  { name: "paid_at", label: "交易时间", type: "datetime-local", attrs: 'step="1" required' },
+  { name: "merchant", label: "商户", type: "text", attrs: 'maxlength="60" placeholder="未识别"' },
+  { name: "thing", label: "消费内容", type: "text", attrs: 'maxlength="40" placeholder="未识别"' },
+  { name: "category", label: "分类", type: "select" },
+  { name: "payment_app", label: "支付渠道", type: "select" },
+  { name: "payment_method", label: "支付方式", type: "text", attrs: 'maxlength="30" placeholder="未识别"' },
+  { name: "card_last4", label: "卡片尾号", type: "text", attrs: 'maxlength="4" inputmode="numeric" placeholder="4 位数字"' },
+];
+
+/** datetime-local 只认 `YYYY-MM-DDTHH:mm`，且必须是本地时间，不能直接塞 ISO 串。 */
+function toLocalInputValue(value) {
+  const date = parseDate(value);
+  if (!date || Number.isNaN(date.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+function evidenceEditControl(field, tx) {
+  const id = `evidenceEdit_${field.name}`;
+  if (field.type === "select") {
+    const options = field.name === "category" ? categoryNames : paymentAppNames;
+    const current = tx[field.name] || "";
+    const blank = field.name === "payment_app" ? `<option value="">未识别</option>` : "";
+    const list = Object.entries(options)
+      .map(([value, label]) => `<option value="${escapeHtml(value)}"${value === current ? " selected" : ""}>${escapeHtml(label)}</option>`)
+      .join("");
+    return `<select id="${id}" name="${field.name}">${blank}${list}</select>`;
+  }
+  const value = field.name === "paid_at" ? toLocalInputValue(tx.paid_at) : (tx[field.name] ?? "");
+  return `<input id="${id}" name="${field.name}" type="${field.type}" value="${escapeHtml(String(value))}" ${field.attrs || ""} />`;
+}
+
+function parsedFieldsSection(payload, editing) {
+  const tx = payload.transaction || {};
+  const edited = new Set(payload.edited_fields || []);
+  const canEdit = payload.editable !== false;
+
+  if (!editing) {
+    return `
+      <div class="evidence-section-head">
+        <h3 id="parsedHeading">解析字段</h3>
+        ${canEdit ? `<button class="btn btn-quiet btn-sm" type="button" data-evidence-edit>校正</button>` : ""}
+      </div>
+      <div class="evidence-grid">
+        ${evidenceField("金额", formatMoney(tx.amount), { edited: edited.has("amount") })}
+        ${evidenceField("交易时间", displayDateTime(tx.paid_at), { edited: edited.has("paid_at") })}
+        ${evidenceField("商户", tx.merchant || tx.platform, { edited: edited.has("merchant") })}
+        ${evidenceField("消费内容", tx.thing || tx.product, { edited: edited.has("thing") })}
+        ${evidenceField("分类", categoryLabel(tx.category), { edited: edited.has("category") })}
+        ${evidenceField("支付渠道", paymentLabel(tx.payment_app), { edited: edited.has("payment_app") })}
+        ${evidenceField("支付方式", tx.payment_method, { edited: edited.has("payment_method") })}
+        ${evidenceField("卡片尾号", tx.card_last4 ? `•••• ${tx.card_last4}` : null, { edited: edited.has("card_last4") })}
+      </div>
+      ${edited.size ? `<p class="evidence-hint">有 ${edited.size} 个字段被人工校正过，重新解析这张截图时会保留。</p>` : ""}
+    `;
+  }
+
+  return `
+    <div class="evidence-section-head">
+      <h3 id="parsedHeading">校正解析字段</h3>
+    </div>
+    <form class="evidence-edit-form" data-evidence-form novalidate>
+      <div class="evidence-grid is-editing">
+        ${EVIDENCE_EDIT_FIELDS.map((field) => `
+          <label class="evidence-field" for="evidenceEdit_${field.name}">
+            <span>${escapeHtml(field.label)}</span>
+            ${evidenceEditControl(field, tx)}
+          </label>
+        `).join("")}
+      </div>
+      <p class="evidence-edit-error" data-evidence-error hidden></p>
+      <div class="evidence-edit-actions">
+        <span class="evidence-hint">${payload.image_url ? "对照左上角的原始截图核对。" : "这笔没有截图，改动只作用于这条记录。"}</span>
+        <button class="btn btn-quiet btn-sm" type="button" data-evidence-cancel>取消</button>
+        <button class="btn btn-primary btn-sm" type="submit">保存</button>
+      </div>
+    </form>
+  `;
 }
 
 function categorySummary(transactions) {
@@ -1261,7 +1351,8 @@ function trapFocus(event) {
   }
 }
 
-function renderEvidence(payload) {
+function renderEvidence(payload, { editing = false } = {}) {
+  state.evidencePayload = payload;
   const tx = payload.transaction || {};
   const warnings = Array.isArray(payload.parse_warnings) ? payload.parse_warnings : [];
   $("evidenceStatus").textContent = tx.classification_status === "pending" ? "等待分类" : "证据完整";
@@ -1276,18 +1367,8 @@ function renderEvidence(payload) {
           : `<div class="evidence-unavailable">这笔记录没有可用截图。交易字段仍可通过 OCR 文本核查。</div>`}
       </div>
     </section>
-    <section class="evidence-section" aria-labelledby="parsedHeading">
-      <h3 id="parsedHeading">解析字段</h3>
-      <div class="evidence-grid">
-        ${evidenceField("金额", formatMoney(tx.amount))}
-        ${evidenceField("交易时间", displayDateTime(tx.paid_at))}
-        ${evidenceField("商户", tx.merchant || tx.platform)}
-        ${evidenceField("消费内容", tx.thing || tx.product)}
-        ${evidenceField("分类", categoryLabel(tx.category))}
-        ${evidenceField("支付渠道", paymentLabel(tx.payment_app))}
-        ${evidenceField("支付方式", tx.payment_method)}
-        ${evidenceField("卡片尾号", tx.card_last4 ? `•••• ${tx.card_last4}` : null)}
-      </div>
+    <section class="evidence-section" aria-labelledby="parsedHeading" data-parsed-host>
+      ${parsedFieldsSection(payload, editing)}
     </section>
     <section class="evidence-section" aria-labelledby="basisHeading">
       <h3 id="basisHeading">识别依据</h3>
@@ -1306,9 +1387,80 @@ function renderEvidence(payload) {
   `;
 }
 
+/** 只换「解析字段」这一段，不重绘整个抽屉，避免截图闪一下、滚动位置跳掉。 */
+function setEvidenceEditing(editing) {
+  const host = $("evidenceContent")?.querySelector("[data-parsed-host]");
+  if (!host || !state.evidencePayload) return;
+  state.evidenceEditing = editing;
+  host.innerHTML = parsedFieldsSection(state.evidencePayload, editing);
+  if (editing) host.querySelector("input, select")?.focus({ preventScroll: true });
+  else host.querySelector("[data-evidence-edit]")?.focus({ preventScroll: true });
+}
+
+async function saveEvidenceEdits(form) {
+  if (state.evidenceSaving) return;
+  const uid = state.activeEvidenceUid;
+  if (!uid) return;
+
+  const data = new FormData(form);
+  const fields = {};
+  for (const { name } of EVIDENCE_EDIT_FIELDS) fields[name] = String(data.get(name) ?? "").trim();
+
+  const errorNode = form.querySelector("[data-evidence-error]");
+  const submit = form.querySelector('button[type="submit"]');
+  const fail = (message) => {
+    if (!errorNode) return;
+    errorNode.textContent = message;
+    errorNode.hidden = false;
+  };
+  if (errorNode) errorNode.hidden = true;
+
+  // 服务端会再校验一遍，这里只是让明显的错误不用等一个来回。
+  if (!fields.amount || !(Number(fields.amount) > 0)) return fail("金额要填一个大于 0 的数字。");
+  if (!fields.paid_at) return fail("交易时间不能为空。");
+
+  state.evidenceSaving = true;
+  if (submit) {
+    submit.disabled = true;
+    submit.textContent = "保存中…";
+  }
+  try {
+    const response = await fetch("./api/transaction-edit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uid, fields }),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) throw new Error(payload.answer || `保存失败：HTTP ${response.status}`);
+    if (state.activeEvidenceUid !== uid) return;
+
+    renderEvidence(payload);
+    state.evidenceEditing = false;
+
+    // 金额和时间会改变每一个派生视图，重新拉一次快照最省心。
+    await loadSnapshot();
+    renderAll();
+    if (!$("trendModal").hidden) renderTrendModal();
+    window.refreshCfoMotion?.();
+    const saved = (payload.saved_fields || []).length;
+    if (!saved) showToast("没有需要保存的改动");
+    else showToast(payload.persisted ? `已校正 ${saved} 个字段，重新解析这张截图时会保留` : `已校正 ${saved} 个字段`);
+  } catch (error) {
+    fail(recoveryMessage(error, "保存交易改动"));
+  } finally {
+    state.evidenceSaving = false;
+    if (submit && submit.isConnected) {
+      submit.disabled = false;
+      submit.textContent = "保存";
+    }
+  }
+}
+
 async function openEvidence(transactionUid) {
   if (!transactionUid) return;
   state.activeEvidenceUid = transactionUid;
+  state.evidencePayload = null;
+  state.evidenceEditing = false;
   state.returnFocusElement = document.activeElement;
   const drawer = $("evidenceDrawer");
   transitionWatchers.get(drawer.querySelector(".evidence-drawer"))?.();
@@ -1340,6 +1492,8 @@ function closeEvidence() {
   if (!drawer || drawer.hidden) return;
   const panel = drawer.querySelector(".evidence-drawer");
   state.activeEvidenceUid = null;
+  state.evidencePayload = null;
+  state.evidenceEditing = false;
   afterTransition(panel, () => {
     if (drawer.classList.contains("drawer-visible")) return;
     drawer.hidden = true;
@@ -3099,7 +3253,23 @@ function wireInteractions() {
   });
 
   $("evidenceDrawer").addEventListener("click", (event) => {
+    if (event.target.closest("[data-evidence-edit]")) {
+      setEvidenceEditing(true);
+      return;
+    }
+    if (event.target.closest("[data-evidence-cancel]")) {
+      setEvidenceEditing(false);
+      return;
+    }
     if (event.target === $("evidenceDrawer") || event.target.closest("[data-drawer-close]")) closeEvidence();
+  });
+
+  // 表单是 innerHTML 重绘出来的，只能在抽屉上做事件委托。
+  $("evidenceDrawer").addEventListener("submit", (event) => {
+    const form = event.target.closest("[data-evidence-form]");
+    if (!form) return;
+    event.preventDefault();
+    saveEvidenceEdits(form);
   });
 
   // 弹窗内、空态里出现的「打开某个弹窗」按钮

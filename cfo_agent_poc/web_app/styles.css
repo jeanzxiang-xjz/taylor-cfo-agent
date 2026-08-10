@@ -4525,6 +4525,19 @@ body.modal-open {
   font-weight: 600;
 }
 
+.evidence-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.btn-sm {
+  min-height: 30px;
+  padding: 0 var(--sp-3);
+  font-size: var(--fs-xs);
+}
+
 .evidence-image-frame {
   display: grid;
   min-height: 220px;
@@ -4580,6 +4593,90 @@ body.modal-open {
   font-size: var(--fs-sm);
   font-weight: 600;
   overflow-wrap: anywhere;
+}
+
+/* ---------------------- 解析字段的人工校正 ---------------------- */
+
+.evidence-field span {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.evidence-edited {
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--jade-bg);
+  color: var(--jade-9);
+  font-size: var(--fs-micro);
+  font-style: normal;
+  line-height: 1.5;
+}
+
+.evidence-field.is-edited {
+  box-shadow: inset 2px 0 0 var(--jade-8);
+}
+
+.evidence-grid.is-editing .evidence-field {
+  gap: var(--sp-2);
+  cursor: text;
+}
+
+.evidence-grid.is-editing input,
+.evidence-grid.is-editing select {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--ink-1);
+  color: var(--text-strong);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.evidence-grid.is-editing select {
+  cursor: pointer;
+}
+
+.evidence-grid.is-editing input:focus-visible,
+.evidence-grid.is-editing select:focus-visible {
+  border-color: var(--jade-8);
+  outline: none;
+}
+
+.evidence-edit-form {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.evidence-edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+
+.evidence-edit-actions .evidence-hint {
+  margin-right: auto;
+}
+
+.evidence-hint {
+  color: var(--muted-dim);
+  font-size: var(--fs-micro);
+  line-height: 1.6;
+}
+
+.evidence-edit-error {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid rgba(229, 131, 121, 0.35);
+  border-radius: var(--r-sm);
+  background: var(--rose-bg);
+  color: var(--rose-8);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
 }
 
 .ocr-text {

@@ -88,6 +88,18 @@ class ParsedBill:
     parse_warnings: list[str]
 
 
+# 可以被人工校正、并且在重新解析时原样回放的字段。
+# thing / category 不在这里：它们和商户记忆有优先级关系，单独处理。
+OVERRIDABLE_TEXT_FIELDS = (
+    "merchant",
+    "product",
+    "paid_at",
+    "payment_app",
+    "payment_method",
+    "card_last4",
+)
+
+
 def ensure_bill_tables(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
@@ -297,15 +309,26 @@ def capture_overrides(conn: sqlite3.Connection, raw_capture_hash: str) -> dict[s
     return {row[0]: row[1] for row in rows}
 
 
+def apply_capture_overrides(parsed: ParsedBill, overrides: dict[str, str | None]) -> None:
+    """把人工校正过的字段盖回解析结果，让重新解析同一张截图不会把改动冲掉。"""
+    for field in OVERRIDABLE_TEXT_FIELDS:
+        if field in overrides:
+            setattr(parsed, field, overrides[field] or None)
+
+    if "amount" in overrides:
+        try:
+            parsed.amount = round(float(overrides["amount"]), 2)
+        except (TypeError, ValueError):
+            pass
+
+
 def apply_persisted_classification(
     conn: sqlite3.Connection,
     parsed: ParsedBill,
     raw_capture_hash: str,
 ) -> ParsedBill:
     overrides = capture_overrides(conn, raw_capture_hash)
-    for field in ("merchant", "product"):
-        if field in overrides:
-            setattr(parsed, field, overrides[field])
+    apply_capture_overrides(parsed, overrides)
 
     if "category" in overrides:
         parsed.category = overrides["category"] or "uncategorized"

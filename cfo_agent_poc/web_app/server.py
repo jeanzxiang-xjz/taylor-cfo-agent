@@ -50,7 +50,7 @@ OWNER_NAME = os.environ.get("CFO_OWNER_NAME", "").strip() or "用户"
 DEBUG_TRACE = os.environ.get("CFO_DEBUG") == "1"
 
 from mail_sync import DEFAULT_SUBJECT, connect_imap, process_mailbox_once_detailed, safe_logout
-from bill_store import ensure_bill_tables
+from bill_store import capture_overrides, ensure_bill_tables
 from classification_service import settle_stuck_transactions, start_background_enrichment
 
 PROMPT_PATH = ROOT_DIR / "prompts" / "cfo_system_prompt.md"
@@ -1628,6 +1628,7 @@ def transaction_evidence(transaction_uid: str) -> dict | None:
             """,
             (transaction_uid,),
         ).fetchone()
+        edited_fields = sorted(capture_overrides(conn, row["raw_capture_hash"])) if row and row["raw_capture_hash"] else []
     finally:
         conn.close()
     if row is None:
@@ -1652,8 +1653,183 @@ def transaction_evidence(transaction_uid: str) -> dict | None:
         "transaction": record,
         "ocr_text": ocr_text,
         "parse_warnings": warnings,
+        "edited_fields": edited_fields,
+        "editable": not DEMO_MODE,
         "image_url": f"/api/transaction-evidence-image?uid={quote(transaction_uid)}" if image_path else None,
     }
+
+
+# ---------------------------- 解析字段人工校正 ----------------------------
+# OCR 会认错，规则会解析歪。这里给一条兜底通道：人工改过的字段写进
+# transaction_overrides，重新解析同一张截图时由 apply_persisted_classification 回放，
+# 所以校正不会被下一次同步冲掉。
+
+MAX_EDIT_AMOUNT = 1_000_000.0
+PAYMENT_APP_LABELS = {"wechat": "微信", "alipay": "支付宝"}
+
+
+class FieldError(ValueError):
+    """字段没通过校验，message 直接给用户看。"""
+
+
+def _edit_text(value: object, label: str, limit: int) -> str | None:
+    text = " ".join(str(value or "").split())
+    if len(text) > limit:
+        raise FieldError(f"{label}最多 {limit} 个字符。")
+    return text or None
+
+
+def _edit_amount(value: object) -> float:
+    try:
+        amount = float(str(value).strip())
+    except (TypeError, ValueError):
+        raise FieldError("金额要填一个数字。") from None
+    if not amount == amount or amount in (float("inf"), float("-inf")):
+        raise FieldError("金额要填一个数字。")
+    if amount <= 0:
+        raise FieldError("金额要大于 0。")
+    if amount > MAX_EDIT_AMOUNT:
+        raise FieldError(f"金额看起来不对，上限是 {MAX_EDIT_AMOUNT:,.0f}。")
+    return round(amount, 2)
+
+
+def _edit_paid_at(value: object) -> str:
+    text = str(value or "").strip().replace("/", "-").replace(" ", "T")
+    try:
+        moment = datetime.fromisoformat(text)
+    except ValueError:
+        raise FieldError("交易时间格式不对，应该像 2026-08-10T13:01。") from None
+    if not 2000 <= moment.year <= 2100:
+        raise FieldError("交易时间超出了合理范围。")
+    return moment.replace(microsecond=0).isoformat(timespec="seconds")
+
+
+def _edit_category(value: object) -> str:
+    category = str(value or "").strip()
+    if category not in CATEGORY_LABELS:
+        raise FieldError("这个分类不在可选范围里。")
+    return category
+
+
+def _edit_payment_app(value: object) -> str | None:
+    app = str(value or "").strip().lower()
+    if not app:
+        return None
+    if app not in PAYMENT_APP_LABELS:
+        raise FieldError("支付渠道只能是微信或支付宝。")
+    return app
+
+
+def _edit_card_last4(value: object) -> str | None:
+    digits = str(value or "").strip()
+    if not digits:
+        return None
+    if not (len(digits) == 4 and digits.isdigit()):
+        raise FieldError("卡片尾号要填 4 位数字。")
+    return digits
+
+
+EDITABLE_FIELDS = {
+    "amount": _edit_amount,
+    "paid_at": _edit_paid_at,
+    "merchant": lambda v: _edit_text(v, "商户", 60),
+    "thing": lambda v: _edit_text(v, "消费内容", 40),
+    "category": _edit_category,
+    "payment_app": _edit_payment_app,
+    "payment_method": lambda v: _edit_text(v, "支付方式", 30),
+    "card_last4": _edit_card_last4,
+}
+
+
+def _same_field(new_value: object, stored: object) -> bool:
+    """空串和 NULL 视为同一件事；金额按分比较，避免 10 和 10.0 被当成改动。"""
+    if new_value is None and (stored is None or stored == ""):
+        return True
+    if isinstance(new_value, float) or isinstance(stored, float):
+        try:
+            return round(float(new_value), 2) == round(float(stored), 2)
+        except (TypeError, ValueError):
+            return False
+    return str(new_value) == str(stored or "")
+
+
+def update_transaction_fields(transaction_uid: str, fields: dict) -> dict:
+    if DEMO_MODE:
+        return {"ok": False, "code": "demo_readonly", "answer": "演示模式下账本是只读的，不能修改交易。"}
+    if not transaction_uid:
+        return {"ok": False, "code": "missing_uid", "answer": "缺少交易编号。"}
+    if not isinstance(fields, dict) or not fields:
+        return {"ok": False, "code": "empty_payload", "answer": "没有需要保存的改动。"}
+
+    unknown = set(fields) - set(EDITABLE_FIELDS)
+    if unknown:
+        return {"ok": False, "code": "unknown_field", "answer": f"不支持修改这些字段：{'、'.join(sorted(unknown))}。"}
+
+    cleaned: dict[str, object] = {}
+    try:
+        for name, raw in fields.items():
+            cleaned[name] = EDITABLE_FIELDS[name](raw)
+    except FieldError as exc:
+        return {"ok": False, "code": "invalid_field", "answer": str(exc)}
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "select * from transactions where transaction_uid = ? limit 1",
+            (transaction_uid,),
+        ).fetchone()
+        if row is None:
+            return {"ok": False, "code": "not_found", "answer": "找不到这笔交易。"}
+        capture_hash = row["raw_capture_hash"]
+
+        # 只记录真正被改动的字段。表单每次都会把 8 个字段整份提交，
+        # 全部当成「人工校正」会让「已校正」标记失去意义。
+        changed = {name: value for name, value in cleaned.items() if not _same_field(value, row[name])}
+        if not changed:
+            evidence = transaction_evidence(transaction_uid)
+            evidence["saved_fields"] = []
+            evidence["persisted"] = bool(capture_hash)
+            return evidence
+
+        assignments = dict(changed)
+        # 只有分类被改动时才动分类元数据，改个金额不该把分类来源写成人工。
+        if "category" in changed:
+            assignments.update({
+                "classification_source": "manual_override",
+                "classification_confidence": 1.0,
+                "classification_status": "resolved",
+                "classification_reason": "capture_override",
+            })
+
+        columns = ", ".join(f"{name} = ?" for name in assignments)
+        conn.execute(
+            f"update transactions set {columns} where transaction_uid = ?",
+            (*assignments.values(), transaction_uid),
+        )
+
+        # 持久层：截图重新解析时靠它回放。没有截图的记录（手工/演示）只改行。
+        if capture_hash:
+            now = datetime.now().isoformat(timespec="seconds")
+            for name, value in changed.items():
+                conn.execute(
+                    """
+                    insert into transaction_overrides (raw_capture_hash, field, value, created_at)
+                    values (?, ?, ?, ?)
+                    on conflict(raw_capture_hash, field) do update set value = excluded.value, created_at = excluded.created_at
+                    """,
+                    (capture_hash, name, None if value is None else str(value), now),
+                )
+        conn.commit()
+    finally:
+        conn.close()
+
+    evidence = transaction_evidence(transaction_uid)
+    if evidence is None:
+        return {"ok": False, "code": "not_found", "answer": "保存后读不到这笔交易了。"}
+    evidence["saved_fields"] = sorted(changed)
+    evidence["persisted"] = bool(capture_hash)
+    return evidence
 
 
 def transaction_evidence_image_path(transaction_uid: str) -> Path | None:
@@ -1941,6 +2117,26 @@ class CFORequestHandler(SimpleHTTPRequestHandler):
                 }, status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
 
+
+        if path == "/api/transaction-edit":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length > MAX_REQUEST_BODY_BYTES:
+                    self.send_json({"ok": False, "answer": "请求内容过长。"}, status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+                    return
+                payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+                result = update_transaction_fields(str(payload.get("uid", "")).strip(), payload.get("fields"))
+                status = HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST
+                if result.get("code") == "not_found":
+                    status = HTTPStatus.NOT_FOUND
+                elif result.get("code") == "demo_readonly":
+                    status = HTTPStatus.FORBIDDEN
+                self.send_json(result, status=status)
+            except json.JSONDecodeError:
+                self.send_json({"ok": False, "answer": "请求格式不是合法 JSON。"}, status=HTTPStatus.BAD_REQUEST)
+            except Exception as exc:
+                self.send_json({"ok": False, "answer": safe_error_message("保存交易改动失败", exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
 
         if path == "/api/profile-report":
             try:
