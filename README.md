@@ -191,6 +191,34 @@ curl http://127.0.0.1:8091/health
 
 </details>
 
+<details>
+<summary><b>在 Linux 服务器上运行（OCR 切换到阿里云）</b></summary>
+
+macOS 之外没有 Apple Vision，OCR 需要换后端。`CFO_OCR_PROVIDER` 默认 `auto`：
+macOS 走 Vision，其它系统走阿里云通用文字识别，也可显式指定 `vision` / `aliyun`。
+
+```bash
+# 只有走阿里云时才需要装依赖，项目其余部分仍是纯标准库
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r cfo_agent_poc/requirements.txt
+```
+
+在 `cfo_agent_poc/.env` 里补上（用**仅授予 OCR 权限的 RAM 子用户**，别用主账号 AccessKey）：
+
+```
+CFO_OCR_PROVIDER=aliyun
+ALIBABA_CLOUD_ACCESS_KEY_ID=...
+ALIBABA_CLOUD_ACCESS_KEY_SECRET=...
+CFO_OCR_REGION=cn-hangzhou
+```
+
+阿里云 OCR 不支持 HEIC/HEIF，快捷指令请输出 PNG 或 JPEG。
+
+> 前端产物 `dist/` 不在版本库里，建议在开发机 `npm run build` 后上传，
+> 服务器就不必安装 Node 工具链。
+
+</details>
+
 ## 🏗️ 系统架构
 
 <div align="center">
@@ -200,14 +228,14 @@ curl http://127.0.0.1:8091/health
 | 层 | 职责 | 主要组件 |
 |---|---|---|
 | ① 移动端采集层 | 在账单页截图并发邮件 | iOS 快捷指令 |
-| ② Mac 本地处理层 | 拉邮件、OCR、解析入库、服务编排 | `mail_sync.py` · `ocr_image.swift` · `bill_store.py` · `server.py` |
+| ② 本地处理层 | 拉邮件、OCR、解析入库、服务编排 | `mail_sync.py` · `ocr_providers.py` · `bill_store.py` · `server.py` |
 | ③ 数据与智能层 | 存证据与结构化交易、LLM 对话 | SQLite `cfo.sqlite` · DeepSeek |
 | ④ 展示与访问层 | 财务大脑页面与访问控制 | React 19 + Vite · 口令认证 |
 
 **几个刻意的技术取舍：**
 
 - **采集用「快捷指令 + 邮件」而不是写手机 App**——私人场景下开发成本最低，且不需要向手机端暴露任何 HTTP 接口，截图借邮箱生态传递即可。
-- **OCR 用 macOS Vision 而不是云端 OCR**——本地、免费、中文账单识别质量好，截图永远不出本机。
+- **OCR 默认用 macOS Vision 而不是云端 OCR**——本地、免费、中文账单识别质量好，截图永远不出本机；后端做成可插拔（`ocr_providers.py`），部署到 Linux 时才切到阿里云 OCR。
 - **入库用规则解析而不是让 LLM 直接写库**——账单字段结构稳定，规则更可控、可解释、零 token 成本；大模型只负责「对话分析」这一层。
 - **后端用 Python 标准库 + SQLite**——本地私有服务不需要重框架，单文件数据库好备份、可直接用 SQL 查询。
 

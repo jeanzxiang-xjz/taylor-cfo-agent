@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 import sqlite3
 import unicodedata
 from collections import Counter
@@ -26,6 +27,46 @@ except ModuleNotFoundError:  # Supports direct execution as cfo_agent_poc/bill_s
 PROJECT_DIR = Path(__file__).resolve().parent
 DATA_DIR = PROJECT_DIR / "data"
 APP_DB = DATA_DIR / "cfo.sqlite"
+
+
+def portable_image_path(image_path: str | Path | None) -> str | None:
+    """Return a project-relative image reference for database persistence.
+
+    Images already inside ``cfo_agent_poc`` are stored relative to that
+    directory (for example ``data/mail_attachments/mail_123_1.png``), so the
+    reference survives moving the whole project.  An image supplied from
+    elsewhere is copied into ``data/evidence`` before its relative reference
+    is returned.  Missing relative paths are kept as-is so old records can be
+    repaired later without reintroducing an absolute machine path.
+    """
+    raw = str(image_path or "").strip()
+    if not raw:
+        return None
+
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
+        normalized = candidate.as_posix()
+        return normalized[2:] if normalized.startswith("./") else normalized
+
+    project_root = PROJECT_DIR.resolve()
+    resolved = candidate.resolve(strict=False)
+    try:
+        return resolved.relative_to(project_root).as_posix()
+    except ValueError:
+        pass
+
+    # A manual import may point at Downloads or another temporary folder. Keep
+    # the bill usable by copying the image into the project's evidence store.
+    if not resolved.is_file():
+        return None
+    evidence_dir = DATA_DIR / "evidence"
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    suffix = resolved.suffix.lower() or ".png"
+    digest = hashlib.sha256(resolved.read_bytes()).hexdigest()[:24]
+    destination = evidence_dir / f"capture_{digest}{suffix}"
+    if not destination.exists():
+        shutil.copy2(resolved, destination)
+    return destination.resolve().relative_to(project_root).as_posix()
 
 
 FIELD_LABELS = [
@@ -357,6 +398,9 @@ def apply_persisted_classification(
 def normalize_text(text: str) -> str:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = text.replace("−", "-").replace("－", "-").replace("—", "-")
+    # OCR 后端对标点宽度的判断不一致：Apple Vision 给半角冒号，阿里云在时间里给全角。
+    # 不归一的话「2026年07月11日20：30：49」会让支付时间整个抽不出来。
+    text = text.replace("：", ":")
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
@@ -562,10 +606,15 @@ def detect_merchant_with_warnings(text: str, product: str | None, platform: str 
 
     first_part = re.split(r"\s*-\s*", product, maxsplit=1)[0]
     first_part = re.sub(r"(App|小程序)$", "", first_part).strip()
+    # 括号里通常是门店名（「丑师傅白辣椒炒肉（顺天财富店）」），去掉才是商户主体。
+    # 全角半角都要认：不同 OCR 后端对同一张截图给出的括号宽度并不一致。
+    #
+    # 这条要排在间隔号规则前面。「暖燕·姨妈热饮·现炖燕窝（滨江店）」里的间隔号是店名
+    # 自身的一部分，先切间隔号只会剩下「暖燕」；按括号切才拿到完整商户主体。
+    if re.search(r"[（(]", first_part):
+        return re.split(r"[（(]", first_part, maxsplit=1)[0].strip(), warnings
     if "·" in first_part:
         return first_part.split("·", 1)[0].strip(), warnings
-    if "（" in first_part:
-        return first_part.split("（", 1)[0].strip(), warnings
     if platform and first_part == platform:
         return header_merchant or platform, warnings
     return header_merchant or (first_part[:40] if first_part else None), warnings
@@ -704,7 +753,8 @@ def store_bill_capture(
     captured_at: str | None = None,
 ) -> ParsedBill:
     parsed = parse_bill_text(ocr_text, source=source, source_hint=source_hint)
-    capture_hash = hashlib.sha256(f"{source}|{ocr_text}|{image_path or ''}".encode("utf-8")).hexdigest()[:32]
+    stored_image_path = portable_image_path(image_path)
+    capture_hash = hashlib.sha256(f"{source}|{ocr_text}|{stored_image_path or ''}".encode("utf-8")).hexdigest()[:32]
     now = datetime.now().isoformat(timespec="seconds")
 
     conn = connect()
@@ -714,7 +764,7 @@ def store_bill_capture(
         (capture_hash, source, ocr_text, image_path, captured_at, created_at)
         values (?, ?, ?, ?, ?, ?)
         """,
-        (capture_hash, source, normalize_text(ocr_text), image_path, captured_at, now),
+        (capture_hash, source, normalize_text(ocr_text), stored_image_path, captured_at, now),
     )
     parsed = apply_persisted_classification(conn, parsed, capture_hash)
     conn.execute(

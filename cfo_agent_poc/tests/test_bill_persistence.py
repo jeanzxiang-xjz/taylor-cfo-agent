@@ -67,6 +67,37 @@ class BillPersistenceTests(unittest.TestCase):
         self.assertIn("merchant_category_memory", tables)
         self.assertIn("transaction_overrides", tables)
 
+    def test_project_absolute_image_path_is_stored_as_relative(self) -> None:
+        absolute_path = bill_store.DATA_DIR / "mail_attachments" / "mail_test_1.png"
+
+        self.assertEqual(
+            bill_store.portable_image_path(absolute_path),
+            "data/mail_attachments/mail_test_1.png",
+        )
+        self.assertEqual(
+            bill_store.portable_image_path("./data/mail_attachments/mail_test_1.png"),
+            "data/mail_attachments/mail_test_1.png",
+        )
+
+        bill_store.store_bill_capture(LOCAL_BILL, source="test", image_path=str(absolute_path))
+        conn = self.connect()
+        image_path = conn.execute("select image_path from raw_bill_captures").fetchone()[0]
+        conn.close()
+        self.assertEqual(image_path, "data/mail_attachments/mail_test_1.png")
+
+    def test_external_image_is_copied_into_project_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as project_dir, tempfile.TemporaryDirectory() as source_dir:
+            project = Path(project_dir)
+            source = Path(source_dir) / "receipt.PNG"
+            source.write_bytes(b"test image bytes")
+            with patch.object(bill_store, "PROJECT_DIR", project), patch.object(
+                bill_store, "DATA_DIR", project / "data"
+            ):
+                stored = bill_store.portable_image_path(source)
+
+            self.assertTrue(stored.startswith("data/evidence/capture_"))
+            self.assertTrue((project / stored).is_file())
+
     def test_local_rule_is_persisted_and_remembered(self) -> None:
         bill_store.store_bill_capture(LOCAL_BILL, source="test", source_hint="wechat")
 

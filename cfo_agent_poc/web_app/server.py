@@ -2110,6 +2110,9 @@ class CFORequestHandler(SimpleHTTPRequestHandler):
             try:
                 self.send_json(sync_mail_once())
             except Exception as exc:
+                # 前端只拿到异常类型名（不泄露内部细节），详情留在服务端日志里，
+                # 否则「请检查本机服务日志」这句提示无日志可查。
+                print(f"[CFO] 邮箱同步失败：{type(exc).__name__}: {exc}")
                 self.send_json({
                     "ok": False,
                     "code": "mail_sync_failed",

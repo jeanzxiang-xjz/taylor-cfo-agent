@@ -1,25 +1,16 @@
 from __future__ import annotations
 
 import argparse
-import subprocess
 from pathlib import Path
 
 from bill_store import DATA_DIR, parsed_to_json, store_bill_capture
+from ocr_providers import ocr_image
 
 
 PROJECT_DIR = Path(__file__).resolve().parent
-OCR_SCRIPT = PROJECT_DIR / "ocr_image.swift"
 OCR_TEXT_DIR = DATA_DIR / "ocr_texts"
 
-
-def ocr_image(image_path: str) -> str:
-    result = subprocess.run(
-        ["swift", str(OCR_SCRIPT), image_path],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout.strip()
+__all__ = ["ocr_image", "process_image", "main"]
 
 
 def process_image(
