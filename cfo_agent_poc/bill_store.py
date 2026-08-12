@@ -204,6 +204,9 @@ def ensure_bill_tables(conn: sqlite3.Connection) -> None:
             # 试过几次。到上限还没结论就落成「未分类」，不能永远挂在 pending。
             "classification_attempts": "integer not null default 0",
             "parse_warnings": "text not null default '[]'",
+            # 人工在证据面板核对过的时间。解析置信低不代表解析错了，
+            # 人看过截图确认后就不该再出现在「待核实」里。
+            "reviewed_at": "text",
         },
     )
     conn.execute(

@@ -120,8 +120,8 @@
       )
       .fromTo(
         ".opening-illustration-wrap",
-        { x: 36, autoAlpha: 0, clipPath: "inset(0% 0% 100% 0%)" },
-        { x: 0, autoAlpha: 1, clipPath: "inset(0% 0% 0% 0%)", duration: 0.94, ease: "power4.out" },
+        { x: 36, autoAlpha: 0 },
+        { x: 0, autoAlpha: 1, duration: 0.94, ease: "power4.out" },
         0.5,
       )
       .fromTo(

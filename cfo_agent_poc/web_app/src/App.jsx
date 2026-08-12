@@ -32,7 +32,7 @@ function OpeningOverlay() {
             <p className="opening-kicker">PRIVATE CASHFLOW INTELLIGENCE</p>
             <div className="opening-title">
               <span>
-                <i>Jeanz</i>
+                <i>XINYI</i>
               </span>
               <span>
                 <i>CFO</i>
@@ -73,7 +73,7 @@ function TopRail() {
       <a className="brand" href="#main">
         <BrandMark />
         <span className="brand-text">
-          <span className="brand-name">Jeanz CFO</span>
+          <span className="brand-name">XINYI CFO</span>
           <span className="brand-sub">私人财务大脑</span>
         </span>
       </a>
@@ -198,7 +198,10 @@ function OverviewHero() {
                 <defs>
                   <linearGradient id="sparkWaveStroke" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="140" y2="0">
                     <stop className="spark-wave-stop-dim" offset="0" />
-                    <stop className="spark-wave-stop-mid" offset="0.55" />
+                    <stop className="spark-wave-stop-dim" offset="0.22" />
+                    <stop className="spark-wave-stop-mid" offset="0.52" />
+                    <stop className="spark-wave-stop-mid" offset="0.68" />
+                    <stop className="spark-wave-stop-lit" offset="0.9" />
                     <stop className="spark-wave-stop-lit" offset="1" />
                   </linearGradient>
                 </defs>

@@ -46,29 +46,50 @@ const paymentAppNames = {
 
 const chatAvatarAssets = {
   user: new URL("../assets/avatar-user.png", import.meta.url).href,
-  agent: new URL("../assets/avatar-cfo.png", import.meta.url).href,
+  agent: new URL("../assets/avatar-cfo-sword.png", import.meta.url).href,
 };
 
 // 类别色板只服务于数据编码（构成条、权重条、流水色点），不参与界面配色。
-// 同一个分类在所有视图里必须是同一个颜色，所以用 key 的稳定哈希取色。
-const CATEGORY_PALETTE = [
-  "var(--cat-1)",
-  "var(--cat-2)",
-  "var(--cat-3)",
-  "var(--cat-4)",
-  "var(--cat-5)",
-  "var(--cat-6)",
-  "var(--cat-7)",
-];
+// 常见分类显式绑定颜色，避免哈希碰撞让同屏多个类型看起来一样。
+const CATEGORY_COLORS = Object.freeze({
+  coffee_tea: "var(--cat-1)",
+  books: "var(--cat-2)",
+  transport: "var(--cat-3)",
+  car_charging: "var(--cat-4)",
+  food_delivery: "var(--cat-5)",
+  ecommerce: "var(--cat-6)",
+  parking: "var(--cat-7)",
+  personal_transfer: "var(--cat-8)",
+  bakery: "var(--cat-9)",
+  property: "var(--cat-10)",
+  investment: "var(--cat-11)",
+  fruit: "var(--cat-12)",
+  education: "var(--cat-13)",
+  leisure_travel: "var(--cat-14)",
+  lottery: "var(--cat-15)",
+  digital_services: "var(--cat-16)",
+  general_shopping: "var(--cat-17)",
+  groceries: "var(--cat-18)",
+  healthcare: "var(--cat-19)",
+  utilities: "var(--cat-20)",
+  stationery: "var(--cat-21)",
+  entertainment: "var(--cat-22)",
+  credit_repayment: "var(--cat-23)",
+  telecom: "var(--cat-24)",
+  auto: "var(--cat-25)",
+  uncategorized: "var(--cat-26)",
+});
+
+const CATEGORY_FALLBACK_PALETTE = Object.values(CATEGORY_COLORS).filter((color) => color !== "var(--cat-26)");
 
 function categoryColor(key) {
   const value = String(key || "uncategorized");
-  if (value === "uncategorized") return "var(--cat-8)";
+  if (CATEGORY_COLORS[value]) return CATEGORY_COLORS[value];
   let hash = 0;
   for (let i = 0; i < value.length; i += 1) {
     hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
   }
-  return CATEGORY_PALETTE[hash % CATEGORY_PALETTE.length];
+  return CATEGORY_FALLBACK_PALETTE[hash % CATEGORY_FALLBACK_PALETTE.length];
 }
 
 const ledgerPageSize = 10;
@@ -1203,6 +1224,7 @@ function renderTrendBudgetPanel() {
   swapText($("trendBudgetPercent"), hasBudget ? `${usage}%` : "--");
   // 「结余 -¥265」是句病句：超了就直说超了多少，符号和标签不该互相打架。
   const over = hasBudget && remaining < 0;
+  $("trendBudgetPanel").classList.toggle("is-over", over);
   const restLabel = over ? "超出预算" : ongoing ? "还能花" : "结余";
   swapText($("trendBudgetRestLabel"), restLabel);
   swapText($("trendBudgetRemaining"), hasBudget ? formatMoney(Math.abs(remaining)) : "--");
@@ -2042,7 +2064,7 @@ function renderComposition() {
     amount: value.amount,
     color: categoryColor(key),
   }));
-  if (restAmount > 0) segments.push({ key: "__rest", label: "其他", amount: restAmount, color: "var(--cat-8)" });
+  if (restAmount > 0) segments.push({ key: "__rest", label: "其他", amount: restAmount, color: "var(--cat-26)" });
 
   $("coreNodes").innerHTML = `
     <div class="composition-bar" role="img" aria-label="${escapeHtml(segments.map((seg) => `${seg.label} ${Math.round((seg.amount / total) * 100)}%`).join("，"))}">
@@ -2218,12 +2240,15 @@ function buildDecisionCandidates() {
   // deepseek_low 是模型低分命中，local_industry 是靠行业词猜的，
   // unresolved 是重试到上限也没结论。这些都比「识别中」强，但值得人扫一眼。
   const WEAK_CLASSIFICATION = new Set(["deepseek_low", "local_industry", "unresolved"]);
+  // 人工在证据面板核对过就不再提示：解析置信低只说明机器没把握，
+  // 人对着截图确认过之后，这笔的不确定性就已经消掉了。
   const unsure = selected
     .filter(
       (tx) =>
-        tx.classification_status === "pending" ||
-        Number(tx.confidence || 0) < 0.6 ||
-        WEAK_CLASSIFICATION.has(tx.classification_source),
+        !tx.reviewed_at &&
+        (tx.classification_status === "pending" ||
+          Number(tx.confidence || 0) < 0.6 ||
+          WEAK_CLASSIFICATION.has(tx.classification_source)),
     )
     .sort((a, b) => positiveSpend(b) - positiveSpend(a));
   if (unsure.length) {
@@ -2828,7 +2853,7 @@ function addMessage(role, text, options = {}) {
   const avatar = document.createElement("img");
   avatar.className = "message-avatar";
   avatar.src = role === "user" ? chatAvatarAssets.user : chatAvatarAssets.agent;
-  avatar.alt = role === "user" ? "提问者像素头像" : "CFO Agent 像素头像";
+  avatar.alt = role === "user" ? "提问者像素头像" : "CFO Agent 金色刀具像素头像";
   avatar.width = 36;
   avatar.height = 36;
   avatar.loading = "lazy";

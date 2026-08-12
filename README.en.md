@@ -2,7 +2,7 @@
 
 [中文](README.md) · **English**
 
-<img src="cfo_agent_poc/web_app/assets/cfo-agent-hero.webp" alt="Jeanz CFO Brain" width="640">
+<img src="cfo_agent_poc/web_app/assets/opening-cfo-illustration.webp" alt="Jeanz CFO Brain" width="640">
 
 # Jeanz CFO Brain
 

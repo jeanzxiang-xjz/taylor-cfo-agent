@@ -1,6 +1,8 @@
 /* ============================================================================
-   Jeanz CFO — 设计系统
-   墨绿中性色 + 单一玉色强调色。类别色板只用于数据编码，不参与界面色。
+   XINYI CFO — 设计系统
+   粉霞浅色：带紫调的纸色中性阶 + 洋红主强调色 + 天空蓝副强调色。
+   取自晨昏云霞（洋红 h315 / 天空蓝 h195 / 暖奶油 h30）。
+   类别色板只用于数据编码，不参与界面色。
    ========================================================================= */
 
 @font-face {
@@ -24,71 +26,137 @@
 }
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
-  /* — 中性墨色阶：保留墨绿气质，但提高表面层次与文字对比 — */
-  --ink-0: #0a100e;
-  --ink-1: #0e1714;
-  --ink-2: #14201c;
-  --ink-3: #1b2a24;
-  --ink-4: #24362e;
-  --ink-5: #2f463c;
-  --ink-6: #3e5a4d;
-  --ink-7: #547267;
-  /* ink-8 供 11–12px 辅助文字使用，在抬亮后的表面上保持 AA 对比度 */
-  --ink-8: #91a69c;
-  --ink-9: #a9bbb2;
-  --ink-10: #c8d6cf;
-  --ink-11: #e2ece7;
-  --ink-12: #f8fcfa;
+  /* — 中性纸色阶：0=纸白 → 12=深墨。带紫调而非中性灰，让中性色仍属于这片云霞。
+       注意：这一阶只描述「面」（卡片/输入框/hover），页面地由下面的 --bg 单独定义 — */
+  --paper-0: #fffdf7;
+  --paper-1: #f5f1e5;
+  --paper-2: #f1ede1;
+  --paper-3: #ebe2d8;
+  --paper-4: #e2d5cd;
+  --paper-5: #d2c3bd;
+  --paper-6: #bdaaa7;
+  --paper-7: #967f82;
+  /* paper-8 供 11–12px 辅助文字使用；取值保证即使压在最浓的云霞环境层上也守住 AA */
+  --paper-8: #65515a;
+  --paper-9: #5d4852;
+  --paper-10: #413038;
+  --paper-11: #2e1f27;
+  --paper-12: #1b1318;
 
-  /* — 唯一强调色：玉绿，饱和度 < 60% — */
-  --jade-bg: #15382d;
-  --jade-line: #326551;
-  --jade-6: #38aa83;
-  --jade-7: #4fc59b;
-  --jade-8: #6bd9ad;
-  --jade-9: #a8efd0;
+  /* — 主强调色：洋红。-7 供文字/图标，-8 供实底按钮（白字对比度 ≥ 7.8） — */
+  --orchid-bg: #f2dfe5;
+  --orchid-line: #ddb9c5;
+  --orchid-5: #d6a1af;
+  --orchid-6: #c48498;
+  --orchid-7: #ad667f;
+  --orchid-8: #965369;
+  --orchid-9: #7d4056;
 
-  /* — 语义色（只用于状态，不用于装饰） — */
-  --amber-6: #bd8840;
-  --amber-8: #f0bb6d;
-  --amber-bg: #33230f;
-  --rose-6: #c9675b;
-  --rose-8: #f29a8e;
-  --rose-bg: #351716;
+  /* — 副强调色：天空蓝。用于次级操作与信息类提示 — */
+  --sky-bg: #dbeaf1;
+  --sky-line: #b9d2df;
+  --sky-6: #83aec2;
+  --sky-7: #5f8fa7;
+  --sky-8: #3e6e85;
 
-  /* — 类别数据色板（仅用于图表/色点，8 色循环） — */
-  --cat-1: #58cda4;
-  --cat-2: #6fbfd6;
-  --cat-3: #e0b266;
-  --cat-4: #de8a73;
-  --cat-5: #a8c46b;
-  --cat-6: #7fa3d8;
-  --cat-7: #c99bc4;
-  --cat-8: #9aa8a4;
+  /* — 薰衣草：参考图里蓝与粉之间那条过渡带，主要供环境层使用 — */
+  --lilac-bg: #e7e1eb;
+  --lilac-line: #cdc4d5;
+  --lilac-6: #9f94b1;
+
+  /* — 氛围暖色：只用于环境层的云霞辉光，不承担任何语义 — */
+  --cream-bg: #f5f1e5;
+  --cream-6: #ead8c2;
+
+  /* — 参考图的页面环境色：蓝天顶、粉霞中段、暖桃底 — */
+  --canvas-sky-deep: #a8c8e1;
+  --canvas-sky: #bcd3e3;
+  --canvas-haze: #d8d0db;
+  --canvas-pink: #eecccb;
+  --canvas-peach: #f6dccf;
+  --canvas-atmosphere:
+    radial-gradient(76% 62% at -6% 0%, var(--canvas-sky-deep) 0%, transparent 70%),
+    radial-gradient(62% 72% at 106% 42%, color-mix(in srgb, #f8eae7 96%, transparent) 0%, transparent 72%),
+    radial-gradient(48% 42% at 48% 104%, color-mix(in srgb, var(--cream-bg) 88%, transparent) 0%, transparent 70%),
+    linear-gradient(180deg, var(--canvas-sky) 0%, var(--canvas-haze) 44%, var(--canvas-pink) 72%, var(--canvas-peach) 100%);
+  /* — 像素徽章统一使用素材自身坐标渐隐；所有边缘在实际图片边界前归零 — */
+  --illustration-fade-mask: radial-gradient(
+    ellipse 50% 50% at 50% 50%,
+    #000 0 52%,
+    rgba(0, 0, 0, 0.92) 66%,
+    rgba(0, 0, 0, 0.58) 80%,
+    rgba(0, 0, 0, 0.2) 91%,
+    transparent 100%
+  );
+
+  /* — 首屏趋势条：浅天蓝 → 胭脂 → 奶油 — */
+  --spark-start: #91b9cd;
+  --spark-mid: #d69bab;
+  --spark-end: #ead8c2;
+
+  /* — 语义色（只用于状态，不用于装饰）。-8 为可读文字角色，-6 为装饰/实底角色 — */
+  --amber-6: #ae7d36;
+  --amber-8: #7e571d;
+  --amber-bg: #faf1df;
+  --rose-6: #b94e5c;
+  --rose-8: #963747;
+  --rose-bg: #fae9ec;
+
+  /* — 类别数据色板（仅用于图表/色点）—
+     25 个常见消费类型各有稳定颜色；共享同一份纸白混色比例，保持磨砂主题融洽。 */
+  --cat-1: color-mix(in srgb, #9b5b7e 72%, var(--paper-0));
+  --cat-2: color-mix(in srgb, #4f829f 72%, var(--paper-0));
+  --cat-3: color-mix(in srgb, #9a784a 72%, var(--paper-0));
+  --cat-4: color-mix(in srgb, #ac6570 72%, var(--paper-0));
+  --cat-5: color-mix(in srgb, #7868a0 72%, var(--paper-0));
+  --cat-6: color-mix(in srgb, #4b8f7a 72%, var(--paper-0));
+  --cat-7: color-mix(in srgb, #806f89 72%, var(--paper-0));
+  --cat-8: color-mix(in srgb, #77737d 72%, var(--paper-0));
+  --cat-9: color-mix(in srgb, #6593ad 72%, var(--paper-0));
+  --cat-10: color-mix(in srgb, #a37862 72%, var(--paper-0));
+  --cat-11: color-mix(in srgb, #718d70 72%, var(--paper-0));
+  --cat-12: color-mix(in srgb, #a05f91 72%, var(--paper-0));
+  --cat-13: color-mix(in srgb, #8876aa 72%, var(--paper-0));
+  --cat-14: color-mix(in srgb, #538c9b 72%, var(--paper-0));
+  --cat-15: color-mix(in srgb, #a98954 72%, var(--paper-0));
+  --cat-16: color-mix(in srgb, #617aa3 72%, var(--paper-0));
+  --cat-17: color-mix(in srgb, #b27287 72%, var(--paper-0));
+  --cat-18: color-mix(in srgb, #7f9162 72%, var(--paper-0));
+  --cat-19: color-mix(in srgb, #9a7296 72%, var(--paper-0));
+  --cat-20: color-mix(in srgb, #5b93a6 72%, var(--paper-0));
+  --cat-21: color-mix(in srgb, #95806a 72%, var(--paper-0));
+  --cat-22: color-mix(in srgb, #7481ad 72%, var(--paper-0));
+  --cat-23: color-mix(in srgb, #a16970 72%, var(--paper-0));
+  --cat-24: color-mix(in srgb, #7b839f 72%, var(--paper-0));
+  --cat-25: color-mix(in srgb, #858569 72%, var(--paper-0));
+  --cat-26: color-mix(in srgb, #7b7378 72%, var(--paper-0));
 
   /* — 语义别名 — */
-  --bg: var(--ink-1);
-  --surface: var(--ink-2);
-  --surface-raised: var(--ink-3);
-  --surface-hover: var(--ink-4);
-  --line: var(--ink-5);
-  --line-strong: var(--ink-6);
-  --text: var(--ink-11);
-  --text-strong: var(--ink-12);
-  --muted: var(--ink-9);
-  --muted-dim: var(--ink-8);
-  --accent: var(--jade-8);
-  --accent-solid: var(--jade-6);
+  /* 页面地刻意不取自纸色阶：色阶要保持轻盈好让卡片浮起来，
+     而页面本身需要一层柔和的有色底，不能是白的。 */
+  --bg: var(--canvas-pink);
+  --surface: var(--paper-2);
+  --surface-raised: var(--paper-1);
+  --surface-hover: var(--paper-3);
+  --line: var(--paper-5);
+  --line-strong: var(--paper-6);
+  --text: var(--paper-11);
+  --text-strong: var(--paper-12);
+  --muted: var(--paper-9);
+  --muted-dim: var(--paper-8);
+  --accent: var(--orchid-7);
+  --accent-solid: var(--orchid-8);
+  --accent-2: var(--sky-8);
 
-  /* — CFO 对话：在全局表面之上再抬一级，让长文本更容易阅读 — */
-  --chat-bg: #17251f;
-  --chat-surface: #203129;
-  --chat-input: #101a16;
-  --chat-line: #3d5b4e;
-  --chat-text: #f0f7f3;
-  --chat-muted: #b9cbc1;
+  /* — CFO 对话：比全局表面更白净一级，让长文本更容易阅读 — */
+  --chat-bg: #f4f0e4;
+  --chat-surface: #fffaf3;
+  --chat-input: #fffdf8;
+  --chat-line: #d3c6be;
+  --chat-text: #2a2027;
+  --chat-muted: #6d5968;
 
   /* — 排版角色：中文界面、金融数字、结构化数据各司其职 — */
   --font-ui: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", "Source Han Sans SC",
@@ -141,12 +209,16 @@
   --r-xl: 22px;
   --r-full: 999px;
 
-  /* — 阴影：统一顶部光源，用页面底色染色 — */
-  --shadow-1: 0 1px 2px rgba(3, 6, 5, 0.4);
-  --shadow-2: 0 2px 4px rgba(3, 6, 5, 0.34), 0 8px 20px -10px rgba(3, 6, 5, 0.5);
-  --shadow-3: 0 4px 10px rgba(3, 6, 5, 0.4), 0 24px 50px -18px rgba(3, 6, 5, 0.66);
-  --shadow-4: 0 10px 24px rgba(3, 6, 5, 0.46), 0 56px 110px -28px rgba(3, 6, 5, 0.78);
-  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  /* — 阴影：统一顶部光源，用最深墨色染色。
+       浅色底下不透明度取深色主题的 ~25%，否则会显脏 — */
+  --shadow-1: 0 1px 2px color-mix(in srgb, var(--paper-12) 10%, transparent);
+  --shadow-2: 0 2px 4px color-mix(in srgb, var(--paper-12) 8%, transparent),
+    0 8px 20px -10px color-mix(in srgb, var(--paper-12) 13%, transparent);
+  --shadow-3: 0 4px 10px color-mix(in srgb, var(--paper-12) 10%, transparent),
+    0 24px 50px -18px color-mix(in srgb, var(--paper-12) 17%, transparent);
+  --shadow-4: 0 10px 24px color-mix(in srgb, var(--paper-12) 12%, transparent),
+    0 56px 110px -28px color-mix(in srgb, var(--paper-12) 20%, transparent);
+  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 
   /* — 层级 — */
   --z-base: 1;
@@ -175,7 +247,7 @@
   --page-max: 1420px;
   --gutter: clamp(16px, 3.6vw, 40px);
   --rail-h: 60px;
-  --focus: 0 0 0 2px var(--ink-1), 0 0 0 4px var(--jade-7);
+  --focus: 0 0 0 2px var(--paper-1), 0 0 0 4px var(--orchid-7);
 }
 
 /* ============================== 基础 ============================== */
@@ -189,6 +261,7 @@
 html {
   scroll-behavior: smooth;
   -webkit-text-size-adjust: 100%;
+  background: var(--canvas-sky);
 }
 
 html,
@@ -205,8 +278,11 @@ body {
 }
 
 body {
+  position: relative;
+  isolation: isolate;
   min-width: 320px;
   overflow-x: hidden;
+  background: transparent;
   font-size: var(--type-body);
   line-height: var(--leading-body);
 }
@@ -249,8 +325,8 @@ kbd {
   padding: 0 0.35em;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-xs);
-  background: var(--ink-3);
-  color: var(--ink-10);
+  background: var(--paper-3);
+  color: var(--paper-10);
   font-family: var(--mono);
   font-size: 0.86em;
   line-height: 1.5;
@@ -264,14 +340,14 @@ kbd {
 }
 
 ::selection {
-  background: rgba(88, 205, 164, 0.26);
-  color: var(--ink-12);
+  background: color-mix(in srgb, var(--orchid-6) 36%, transparent);
+  color: var(--paper-12);
 }
 
 /* 全站统一的细滚动条 */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--ink-6) transparent;
+  scrollbar-color: var(--paper-6) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -286,12 +362,12 @@ kbd {
 *::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
   border-radius: var(--r-full);
-  background: var(--ink-6);
+  background: var(--paper-6);
   background-clip: content-box;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: var(--ink-7);
+  background: var(--paper-7);
   background-clip: content-box;
 }
 
@@ -316,8 +392,8 @@ kbd {
   z-index: var(--z-overlay);
   padding: 10px 18px;
   border-radius: var(--r-full);
-  background: var(--jade-8);
-  color: var(--ink-0);
+  background: var(--orchid-8);
+  color: var(--paper-0);
   font-weight: 600;
   transform: translate(-50%, -160%);
   transition: transform var(--dur-2) var(--ease-out);
@@ -392,7 +468,7 @@ kbd {
 .skeleton {
   display: block;
   border-radius: var(--r-sm);
-  background: linear-gradient(90deg, var(--ink-4) 0%, var(--ink-5) 40%, var(--ink-4) 80%);
+  background: linear-gradient(90deg, var(--paper-4) 0%, var(--paper-5) 40%, var(--paper-4) 80%);
   background-size: 280% 100%;
 }
 
@@ -445,24 +521,24 @@ kbd {
 }
 
 .btn-primary {
-  background: var(--jade-8);
-  color: var(--ink-0);
+  background: var(--orchid-8);
+  color: var(--paper-0);
   box-shadow: var(--shadow-2);
 }
 
 .btn-primary:hover {
-  background: var(--jade-9);
+  background: var(--orchid-9);
 }
 
 .btn-quiet {
   border-color: var(--line);
-  background: var(--ink-3);
-  color: var(--ink-10);
+  background: var(--paper-3);
+  color: var(--paper-10);
 }
 
 .btn-quiet:hover {
   border-color: var(--line-strong);
-  background: var(--ink-4);
+  background: var(--paper-4);
   color: var(--text-strong);
 }
 
@@ -477,12 +553,12 @@ kbd {
   color: var(--accent);
   font: inherit;
   text-decoration: underline;
-  text-decoration-color: rgba(88, 205, 164, 0.4);
+  text-decoration-color: color-mix(in srgb, var(--orchid-6) 56%, transparent);
   text-underline-offset: 3px;
 }
 
 .link-button:hover {
-  text-decoration-color: var(--jade-8);
+  text-decoration-color: var(--orchid-8);
 }
 
 /* ============================== 环境层 ============================== */
@@ -491,23 +567,15 @@ body::before {
   content: "";
   position: fixed;
   inset: 0;
-  z-index: -2;
-  pointer-events: none;
-  background:
-    radial-gradient(120% 80% at 88% -10%, rgba(46, 158, 123, 0.1), transparent 58%),
-    radial-gradient(90% 60% at 6% 104%, rgba(46, 158, 123, 0.05), transparent 60%),
-    linear-gradient(180deg, var(--ink-1) 0%, var(--ink-0) 100%);
-}
-
-/* 细颗粒噪点，打破纯平数字感 */
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
   z-index: -1;
   pointer-events: none;
-  opacity: 0.032;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  /* 构图与参考图保持一致：蓝色集中在上半屏，粉霞横穿中段，底部落到暖桃和奶油。 */
+  background: var(--canvas-atmosphere);
+}
+
+/* 参考图靠大色块的柔和过渡成立，界面无需额外纹理。 */
+body::after {
+  content: none;
 }
 
 /* ============================== 加载 / 开场 ============================== */
@@ -521,7 +589,7 @@ body::after {
   visibility: hidden;
   opacity: 0;
   pointer-events: none;
-  background: var(--ink-1);
+  background: var(--canvas-atmosphere);
   transition: opacity var(--dur-3) var(--ease-out);
 }
 
@@ -541,7 +609,7 @@ body.app-loading .app-loading-screen {
   width: 4px;
   height: 100%;
   border-radius: var(--r-full);
-  background: var(--jade-7);
+  background: var(--orchid-7);
   transform-origin: bottom;
   transform: scaleY(0.32);
 }
@@ -569,10 +637,7 @@ body.app-loading .app-loading-screen {
   visibility: hidden;
   opacity: 0;
   pointer-events: none;
-  background:
-    linear-gradient(135deg, rgba(46, 158, 123, 0.07), transparent 34%),
-    radial-gradient(circle at 16% 84%, rgba(46, 158, 123, 0.1), transparent 36%),
-    var(--ink-0);
+  background: var(--canvas-atmosphere);
   /* 起始裁剪值必须显式写出来，收场的向上擦除才有可插值的初值 */
   clip-path: inset(0 0 0 0);
 }
@@ -610,12 +675,12 @@ body.motion-complete .opening-overlay {
 
 .opening-rule-top {
   top: 0;
-  background: linear-gradient(90deg, rgba(88, 205, 164, 0.34), rgba(88, 205, 164, 0.1) 62%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--orchid-6) 48%, transparent), color-mix(in srgb, var(--orchid-6) 14%, transparent) 62%, transparent);
 }
 
 .opening-rule-bottom {
   bottom: 0;
-  background: linear-gradient(90deg, rgba(88, 205, 164, 0.2), rgba(88, 205, 164, 0.06) 62%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--orchid-6) 28%, transparent), color-mix(in srgb, var(--orchid-6) 8%, transparent) 62%, transparent);
 }
 
 .opening-content {
@@ -643,7 +708,7 @@ body.motion-complete .opening-overlay {
 
 .opening-title {
   display: grid;
-  color: var(--ink-12);
+  color: var(--paper-12);
   font-family: var(--mono);
   font-size: clamp(56px, 12.5vw, 150px);
   font-weight: 700;
@@ -665,12 +730,12 @@ body.motion-complete .opening-overlay {
 }
 
 .opening-title > span:last-child > i {
-  color: var(--jade-8);
+  color: var(--orchid-8);
 }
 
 /* 主宣传语：中文正文字，靠字距而非字号取得分量，压在字标与发丝线之间 */
 .opening-tagline {
-  color: var(--ink-11);
+  color: var(--paper-11);
   font-family: var(--font-ui);
   font-size: clamp(16px, 1.9vw, 23px);
   font-weight: 400;
@@ -685,7 +750,7 @@ body.motion-complete .opening-overlay {
   display: block;
   width: min(440px, 68%);
   height: 1px;
-  background: linear-gradient(90deg, transparent, var(--jade-7) 42%, transparent);
+  background: linear-gradient(90deg, transparent, var(--orchid-7) 42%, transparent);
   transform: scaleX(0);
   transform-origin: left center;
 }
@@ -693,7 +758,7 @@ body.motion-complete .opening-overlay {
 /* 发丝线之下只剩这一句功能自述，它要独自收住整段字幕：
    字距比正文略开，宽度收进发丝线的量级，读作副题而不是段落。 */
 .opening-subline {
-  color: var(--ink-10);
+  color: var(--paper-10);
   font-family: var(--font-ui);
   font-size: var(--type-compact);
   line-height: 1.6;
@@ -702,66 +767,52 @@ body.motion-complete .opening-overlay {
   max-width: 30em;
 }
 
+/* 迎宾徽章直接融入云霞背景，不额外添加底板或线框。 */
 .opening-illustration-wrap {
   position: relative;
-  min-height: clamp(210px, 33vw, 380px);
-  display: grid;
-  place-items: center;
+  isolation: isolate;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  /* 用 max-width 而不是 max-height 收口：宽度受限时 aspect-ratio 才能一直成立，
+     方框在任何列宽下都保持正方，不会把徽章裁扁。 */
+  max-width: clamp(224px, 31vw, 368px);
   overflow: hidden;
+  contain: paint;
   margin-left: clamp(-28px, -2vw, 0px);
-  border: 1px solid var(--ink-6);
-  border-radius: var(--r-lg);
-  background:
-    radial-gradient(circle at 50% 46%, rgba(46, 158, 123, 0.1), transparent 62%),
-    #040706;
-  box-shadow:
-    inset 0 0 40px rgba(46, 158, 123, 0.06),
-    0 0 80px rgba(46, 158, 123, 0.07);
+  background: transparent;
 }
 
-/* 内框 + 扫描线纹理 */
 .opening-illustration-wrap::before {
-  content: "";
-  position: absolute;
-  inset: 12px;
-  z-index: 2;
-  pointer-events: none;
-  border: 1px solid rgba(88, 205, 164, 0.1);
-  border-radius: var(--r-sm);
-  background:
-    linear-gradient(180deg, rgba(88, 205, 164, 0.05), transparent 34%, rgba(0, 0, 0, 0.24)),
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.028) 0 1px, transparent 1px 9px);
-  mix-blend-mode: screen;
+  content: none;
 }
 
 .opening-illustration {
-  position: relative;
+  position: absolute;
+  inset: 3%;
   z-index: 1;
-  width: min(86%, 340px);
-  height: auto;
-  /* 线稿是纯黑底白线：screen 直接把黑底抠掉，再补一层玉色辉光 */
-  mix-blend-mode: screen;
-  filter:
-    drop-shadow(0 0 14px rgba(241, 245, 243, 0.16))
-    drop-shadow(0 0 34px rgba(88, 205, 164, 0.26));
+  width: 94%;
+  height: 94%;
+  object-fit: cover;
+  opacity: 0.9;
+  filter: saturate(0.82) contrast(0.95) brightness(1.03);
+  -webkit-mask-image: var(--illustration-fade-mask);
+  mask-image: var(--illustration-fade-mask);
 }
 
+/* 旧的洋红辉光是为了让白线稿在深底上发光，铺满的彩图不再需要 */
 .opening-illustration-glow {
-  position: absolute;
-  inset: 18%;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(46, 158, 123, 0.24), transparent 66%);
-  filter: blur(18px);
+  display: none;
 }
 
 /* 停留期间的一道扫描光，让静止的那一秒半不显得卡住 */
 .opening-sweep {
   position: absolute;
-  inset: 12px;
+  inset: 0;
   z-index: 3;
   pointer-events: none;
   overflow: hidden;
-  border-radius: var(--r-sm);
+  -webkit-mask-image: var(--illustration-fade-mask);
+  mask-image: var(--illustration-fade-mask);
 }
 
 .opening-sweep::after {
@@ -771,8 +822,8 @@ body.motion-complete .opening-overlay {
   right: 0;
   top: -40%;
   height: 40%;
-  background: linear-gradient(180deg, transparent, rgba(147, 228, 196, 0.16), transparent);
-  mix-blend-mode: screen;
+  /* 浅色图上 screen 不显影，改成一道白色柔光扫过 */
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.42), transparent);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -857,9 +908,9 @@ body.motion-ready .app-shell {
 
 body.is-scrolled .rail {
   border-bottom-color: var(--line);
-  background: color-mix(in srgb, var(--ink-1) 82%, transparent);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  background: color-mix(in srgb, var(--canvas-sky) 68%, var(--paper-0));
+  backdrop-filter: blur(20px) saturate(1.15);
+  -webkit-backdrop-filter: blur(20px) saturate(1.15);
   box-shadow: var(--shadow-2);
 }
 
@@ -879,7 +930,7 @@ body.is-scrolled .rail {
 }
 
 .brand-mark-plate {
-  fill: var(--ink-3);
+  fill: var(--paper-3);
   stroke: var(--line-strong);
   stroke-width: 1;
 }
@@ -887,18 +938,18 @@ body.is-scrolled .rail {
 .brand-mark-stroke,
 .brand-mark-tick {
   fill: none;
-  stroke: var(--jade-8);
+  stroke: var(--orchid-8);
   stroke-width: 2;
   stroke-linecap: round;
 }
 
 .brand-mark-tick {
-  stroke: var(--ink-7);
+  stroke: var(--paper-7);
   stroke-width: 1.6;
 }
 
 .brand:hover .brand-mark-tick {
-  stroke: var(--jade-6);
+  stroke: var(--orchid-6);
 }
 
 .brand-text {
@@ -939,7 +990,7 @@ body.is-scrolled .rail {
 
 .nav-item:hover {
   color: var(--text);
-  background: var(--ink-3);
+  background: var(--paper-3);
 }
 
 .nav-item.is-active,
@@ -956,7 +1007,7 @@ body.is-scrolled .rail {
   bottom: 2px;
   height: 1.5px;
   border-radius: var(--r-full);
-  background: var(--jade-7);
+  background: var(--orchid-7);
 }
 
 .rail-tail {
@@ -969,24 +1020,26 @@ body.is-scrolled .rail {
 
 /* — 周期分段控件：滑块跟随，而不是四个独立高亮 — */
 .period-control {
+  --period-inset: 3px;
+  --period-item-height: 28px;
   position: relative;
   display: flex;
-  padding: 3px;
+  align-items: center;
+  padding: var(--period-inset);
   border: 1px solid var(--line);
   border-radius: var(--r-md);
-  background: var(--ink-2);
+  background: color-mix(in srgb, var(--paper-0) 80%, transparent);
   box-shadow: var(--edge);
 }
 
 .period-thumb {
   position: absolute;
-  top: 3px;
-  bottom: 3px;
-  left: 3px;
+  inset-block: var(--period-inset);
+  left: var(--period-inset);
   width: 0;
   border-radius: var(--r-sm);
-  background: var(--ink-5);
-  box-shadow: var(--shadow-1), var(--edge);
+  background: color-mix(in srgb, var(--orchid-bg) 88%, var(--paper-0));
+  box-shadow: var(--edge);
   transition: transform var(--motion-data) var(--ease-out);
   pointer-events: none;
 }
@@ -994,12 +1047,16 @@ body.is-scrolled .rail {
 .period-btn {
   position: relative;
   z-index: 1;
-  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--period-item-height);
   padding: 0 var(--sp-3);
   border-radius: var(--r-sm);
   color: var(--muted);
   font-size: var(--fs-sm);
   font-weight: 500;
+  line-height: 1;
   white-space: nowrap;
   transition: color var(--dur-2) var(--ease-out);
 }
@@ -1045,12 +1102,12 @@ body.is-scrolled .rail {
 }
 
 .rail-action svg .is-filled {
-  fill: var(--ink-2);
+  fill: var(--paper-2);
 }
 
 .rail-action:hover {
   color: var(--text-strong);
-  background: var(--ink-3);
+  background: var(--paper-3);
 }
 
 .rail-action[disabled] {
@@ -1132,11 +1189,11 @@ body.is-scrolled .rail {
   flex: 0 0 36px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--jade-line);
+  border: 1px solid var(--orchid-line);
   border-radius: 50%;
-  background: rgba(21, 56, 45, 0.56);
-  color: var(--jade-8);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 8px 18px -13px rgba(107, 217, 173, 0.72);
+  background: color-mix(in srgb, var(--orchid-bg) 70%, transparent);
+  color: var(--orchid-8);
+  box-shadow: var(--edge), 0 8px 18px -13px color-mix(in srgb, var(--orchid-6) 55%, transparent);
 }
 
 .section-title-mark svg {
@@ -1150,9 +1207,26 @@ body.is-scrolled .rail {
 }
 
 .section-title-mark .section-title-node {
-  fill: var(--jade-8);
-  stroke: var(--ink-2);
+  fill: var(--orchid-8);
+  stroke: var(--paper-2);
   stroke-width: 1.2;
+}
+
+/* 关键观察与可追溯交易使用同一枚天青标记，维持同级模块的一致识别。
+   与其它区块标记一样走「淡底 + 深图标」，不再用饱和实心蓝：
+   底色淡下来的同时，图标对比反而从 4.07 升到 5.16。 */
+#signals .section-title-mark,
+#ledger .section-title-mark {
+  border-color: var(--sky-line);
+  background: color-mix(in srgb, var(--sky-bg) 70%, transparent);
+  color: var(--sky-8);
+  box-shadow: var(--edge), 0 8px 18px -13px color-mix(in srgb, var(--sky-6) 45%, transparent);
+}
+
+#signals .section-title-mark .section-title-node,
+#ledger .section-title-mark .section-title-node {
+  fill: var(--sky-8);
+  stroke: var(--paper-2);
 }
 
 .section-head h2 {
@@ -1187,7 +1261,7 @@ body.is-scrolled .rail {
   padding: 0 10px 0 8px;
   border: 1px solid var(--line);
   border-radius: var(--r-full);
-  background: var(--ink-2);
+  background: var(--paper-2);
   color: var(--muted);
   font-size: var(--fs-xs);
   font-weight: 500;
@@ -1198,17 +1272,17 @@ body.is-scrolled .rail {
   width: 5px;
   height: 5px;
   border-radius: var(--r-full);
-  background: var(--ink-7);
+  background: var(--paper-7);
 }
 
 .state-chip[data-state="active"] {
-  border-color: var(--jade-line);
-  color: var(--jade-9);
+  border-color: var(--orchid-line);
+  color: var(--orchid-9);
 }
 
 .state-chip[data-state="active"]::before {
-  background: var(--jade-7);
-  box-shadow: 0 0 0 3px rgba(46, 158, 123, 0.18);
+  background: var(--orchid-7);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--orchid-6) 25%, transparent);
 }
 
 .mini-heading {
@@ -1251,7 +1325,7 @@ body.is-scrolled .rail {
   padding: var(--sp-6);
   overflow: hidden;
   background:
-    radial-gradient(130% 90% at 0% 0%, rgba(46, 158, 123, 0.11), transparent 56%),
+    radial-gradient(95% 80% at 100% 100%, color-mix(in srgb, var(--orchid-5) 10%, transparent), transparent 66%),
     var(--surface);
 }
 
@@ -1277,7 +1351,7 @@ body.is-scrolled .rail {
 }
 
 .hero-title {
-  color: var(--ink-10);
+  color: var(--paper-10);
   font-size: var(--fs-md);
   font-weight: 500;
   letter-spacing: 0;
@@ -1321,12 +1395,12 @@ body.is-scrolled .rail {
 }
 
 .figure-delta[data-trend="down"] {
-  background: var(--jade-bg);
-  color: var(--jade-8);
+  background: var(--sky-bg);
+  color: var(--sky-8);
 }
 
 .figure-delta[data-trend="flat"] {
-  background: var(--ink-3);
+  background: var(--paper-3);
   color: var(--muted);
 }
 
@@ -1362,7 +1436,7 @@ body.is-scrolled .rail {
   position: relative;
   height: 6px;
   border-radius: var(--r-full);
-  background: var(--ink-4);
+  background: var(--paper-4);
   overflow: hidden;
 }
 
@@ -1371,7 +1445,7 @@ body.is-scrolled .rail {
   width: 100%;
   height: 100%;
   border-radius: inherit;
-  background: var(--jade-7);
+  background: linear-gradient(90deg, var(--orchid-7), var(--orchid-6) 62%, var(--cream-6));
   transform: scaleX(var(--meter-ratio, 0));
   transform-origin: left center;
   transition: transform var(--motion-data) var(--ease-out), background var(--dur-2) var(--ease-out);
@@ -1389,7 +1463,12 @@ body.is-scrolled .rail {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: repeating-linear-gradient(90deg, transparent 0 calc(25% - 1px), rgba(10, 14, 13, 0.85) calc(25% - 1px) 25%);
+  /* 浅色底下刻度改为高光白：压在彩色进度条上是缺口，压在空槽上是极淡的分隔 */
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0 calc(25% - 1px),
+    color-mix(in srgb, var(--paper-0) 88%, transparent) calc(25% - 1px) 25%
+  );
 }
 
 .hero-budget-foot {
@@ -1399,7 +1478,7 @@ body.is-scrolled .rail {
 }
 
 .hero-budget-foot b {
-  color: var(--ink-10);
+  color: var(--paper-10);
   font-weight: 600;
 }
 
@@ -1427,7 +1506,7 @@ body.is-scrolled .rail {
 
 .hero-spark:hover {
   border-color: var(--line);
-  background: var(--ink-3);
+  background: var(--paper-3);
 }
 
 .hero-spark-head {
@@ -1485,15 +1564,15 @@ body.is-scrolled .rail {
 
 /* 渐变端点写在 CSS 里，才能用设计令牌 */
 .spark-wave-stop-dim {
-  stop-color: var(--ink-6);
+  stop-color: var(--spark-start);
 }
 
 .spark-wave-stop-mid {
-  stop-color: var(--jade-6);
+  stop-color: var(--spark-mid);
 }
 
 .spark-wave-stop-lit {
-  stop-color: var(--jade-8);
+  stop-color: var(--spark-end);
 }
 
 /* 柱宽用 viewBox 单位而不是 non-scaling-stroke：柱和缝要按同一比例缩放，
@@ -1511,7 +1590,7 @@ body.is-scrolled .rail {
 }
 
 .spark-wave-base {
-  stroke: var(--ink-5);
+  stroke: var(--paper-5);
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
@@ -1550,12 +1629,12 @@ body.is-scrolled .rail {
   margin: 0;
   padding: var(--sp-5);
   border-color: var(--line);
-  background: var(--ink-1);
+  background: var(--paper-1);
 }
 
 .hero-spark.is-profile:hover {
   border-color: var(--line-strong);
-  background: var(--ink-3);
+  background: var(--paper-3);
 }
 
 .hero-profile-content {
@@ -1579,10 +1658,10 @@ body.is-scrolled .rail {
   height: 64px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--jade-line);
+  border: 1px solid var(--orchid-line);
   border-radius: 50%;
-  background: var(--jade-bg);
-  color: var(--jade-8);
+  background: var(--orchid-bg);
+  color: var(--orchid-8);
 }
 
 .hero-profile-mark svg {
@@ -1596,7 +1675,7 @@ body.is-scrolled .rail {
 }
 
 .hero-profile-mark circle:not(:first-child) {
-  fill: var(--ink-2);
+  fill: var(--paper-2);
 }
 
 .hero-profile-copy {
@@ -1625,10 +1704,10 @@ body.is-scrolled .rail {
   align-items: center;
   gap: 5px;
   padding: 7px 13px;
-  border: 1px solid var(--jade-line);
+  border: 1px solid var(--orchid-line);
   border-radius: var(--r-full);
-  background: var(--jade-bg);
-  color: var(--jade-9);
+  background: var(--orchid-bg);
+  color: var(--orchid-9);
   font-size: var(--fs-xs);
   font-weight: 600;
   white-space: nowrap;
@@ -1636,8 +1715,8 @@ body.is-scrolled .rail {
 }
 
 .hero-spark.is-profile:hover .hero-profile-action {
-  border-color: var(--jade-7);
-  background: rgba(76, 158, 132, 0.2);
+  border-color: var(--orchid-7);
+  background: color-mix(in srgb, var(--orchid-6) 28%, transparent);
 }
 
 .hero-profile-action svg {
@@ -1658,13 +1737,51 @@ body.is-scrolled .rail {
 /* ============================== 对话 ============================== */
 
 .hero-chat {
+  --chat-glass-panel: color-mix(in srgb, var(--chat-bg) 50%, transparent);
+  --chat-glass-panel-filter: blur(12px) saturate(1.12);
+  --chat-glass-medium: color-mix(in srgb, var(--chat-surface) 58%, transparent);
+  --chat-glass-light: color-mix(in srgb, var(--chat-input) 52%, transparent);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   height: clamp(480px, 56dvh, 520px);
   min-height: 0;
   border-color: var(--chat-line);
-  background: var(--chat-bg);
+  background: linear-gradient(
+    180deg,
+    #e8eeed 0%,
+    #e9e1e8 38%,
+    #efdfea 66%,
+    #f7efe6 100%
+  );
+  isolation: isolate;
   overflow: hidden;
+  contain: paint;
+}
+
+/* 徽章属于整个对话框的底图层，而不是消息区的一张贴图。
+   正方形按容器高度完整铺开，顶部与底部尖角都能透过玻璃栏被看见。 */
+.hero-chat::before {
+  position: absolute;
+  top: calc(50% - 36px);
+  left: 50%;
+  z-index: 0;
+  height: min(calc(100% - 72px), 360px);
+  aspect-ratio: 1;
+  content: "";
+  background: url("./assets/opening-cfo-illustration.webp") center / cover no-repeat;
+  opacity: 0.64;
+  filter: saturate(0.62) contrast(0.94) brightness(1.05);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  -webkit-mask-image: var(--illustration-fade-mask);
+  mask-image: var(--illustration-fade-mask);
+}
+
+.hero-chat > .chat-head,
+.hero-chat > .chat-message-stage,
+.hero-chat > .chat-foot {
+  position: relative;
+  z-index: 1;
 }
 
 .chat-expand-placeholder {
@@ -1711,7 +1828,7 @@ body.chat-expanded-open {
   position: fixed;
   inset: 0;
   z-index: var(--z-modal);
-  background: rgba(4, 7, 6, 0.78);
+  background: color-mix(in srgb, var(--paper-12) 55%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   opacity: 0;
@@ -1736,14 +1853,20 @@ body.chat-expanded-open {
   width: auto;
   height: auto;
   min-height: 0;
-  border-color: var(--jade-line);
-  box-shadow: var(--shadow-4), 0 0 0 1px rgba(88, 205, 164, 0.08);
+  border-color: var(--orchid-line);
+  box-shadow: var(--shadow-4), 0 0 0 1px color-mix(in srgb, var(--orchid-6) 11%, transparent);
   opacity: 0;
   transform: translateY(16px) scale(0.985);
   transition:
     opacity var(--motion-overlay-enter) var(--ease-out),
     transform var(--motion-chat-enter) var(--ease-out),
     box-shadow var(--motion-overlay-enter) var(--ease-out);
+}
+
+.hero-chat.is-expanded::before {
+  top: calc(50% - clamp(22px, 4.00vh, 33px));
+  height: min(calc(100% - 90px), 720px);
+  opacity: 0.76;
 }
 
 .hero-chat.is-expanded.is-expanded-active {
@@ -1762,7 +1885,6 @@ body.chat-expanded-open {
 .hero-chat.is-expanded .chat-head {
   padding-right: clamp(var(--sp-5), 3vw, var(--sp-8));
   padding-left: clamp(var(--sp-5), 3vw, var(--sp-8));
-  background: color-mix(in srgb, var(--chat-bg) 78%, var(--jade-bg));
 }
 
 .hero-chat.is-expanded .chat-messages {
@@ -1783,12 +1905,19 @@ body.chat-expanded-open {
   padding: 15px 18px;
 }
 
+.chat-head,
+.chat-foot {
+  background: var(--chat-glass-panel);
+  -webkit-backdrop-filter: var(--chat-glass-panel-filter);
+  backdrop-filter: var(--chat-glass-panel-filter);
+}
+
 .chat-head {
   display: grid;
   gap: 4px;
   padding: var(--sp-4) var(--sp-5) var(--sp-3);
-  border-bottom: 1px solid var(--chat-line);
-  background: color-mix(in srgb, var(--chat-bg) 86%, var(--jade-bg));
+  border-bottom: 1px solid color-mix(in srgb, var(--chat-line) 72%, transparent);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--paper-0) 48%, transparent);
 }
 
 .chat-head-row {
@@ -1849,7 +1978,7 @@ body.chat-expanded-open {
 
 .chat-mode-action {
   padding: 0 11px;
-  border-color: color-mix(in srgb, var(--jade-7) 42%, var(--chat-line));
+  border-color: color-mix(in srgb, var(--orchid-7) 42%, var(--chat-line));
   color: var(--chat-text);
 }
 
@@ -1872,9 +2001,9 @@ body.chat-expanded-open {
 
 .chat-icon-action:hover,
 .chat-mode-action:hover {
-  border-color: var(--jade-7);
-  background: var(--jade-bg);
-  color: var(--jade-9);
+  border-color: var(--orchid-7);
+  background: var(--orchid-bg);
+  color: var(--orchid-9);
 }
 
 .chat-icon-action:active,
@@ -1898,7 +2027,7 @@ body.chat-expanded-open {
   width: 6px;
   height: 6px;
   border-radius: var(--r-full);
-  background: var(--jade-7);
+  background: var(--orchid-7);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -1919,21 +2048,7 @@ body.chat-expanded-open {
   position: relative;
   min-height: 0;
   overflow: hidden;
-}
-
-/* CFO 系统标识：保留横向素材的 1024:454 比例，作为内容区的品牌蒙版。 */
-.chat-message-stage::before {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  content: "";
-  background: url("./assets/cfo-agent-hero.webp") center / cover no-repeat;
-  opacity: 0.12;
-  filter: saturate(1.12) contrast(1.04) brightness(1.06);
-  mix-blend-mode: screen;
-  pointer-events: none;
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 9%, #000 90%, transparent 100%);
-  mask-image: linear-gradient(to bottom, transparent 0%, #000 9%, #000 90%, transparent 100%);
+  contain: paint;
 }
 
 .chat-messages {
@@ -1951,10 +2066,10 @@ body.chat-expanded-open {
   gap: 6px;
   height: 30px;
   padding: 0 11px;
-  border: 1px solid var(--jade-line);
+  border: 1px solid var(--orchid-line);
   border-radius: var(--r-full);
   background: var(--chat-surface);
-  color: var(--jade-9);
+  color: var(--orchid-9);
   font-size: var(--fs-xs);
   font-weight: 500;
   box-shadow: var(--shadow-2);
@@ -1963,7 +2078,7 @@ body.chat-expanded-open {
 }
 
 .chat-latest-button:hover {
-  background: var(--jade-bg);
+  background: var(--orchid-bg);
 }
 
 .chat-latest-button:active {
@@ -2034,12 +2149,12 @@ body.chat-expanded-open {
   background: var(--chat-surface);
   image-rendering: pixelated;
   object-fit: cover;
-  box-shadow: 0 3px 8px rgba(4, 12, 9, 0.2);
+  box-shadow: 0 3px 8px color-mix(in srgb, var(--paper-12) 6%, transparent);
 }
 
 .message.user .message-avatar {
-  border-color: color-mix(in srgb, var(--jade-7) 58%, var(--chat-line));
-  background: var(--jade-bg);
+  border-color: color-mix(in srgb, var(--orchid-7) 58%, var(--chat-line));
+  background: var(--orchid-bg);
 }
 
 .message-bubble {
@@ -2052,14 +2167,14 @@ body.chat-expanded-open {
   background: var(--bubble-bg);
   -webkit-backdrop-filter: blur(16px) saturate(1.16);
   backdrop-filter: blur(16px) saturate(1.16);
-  box-shadow: inset 0 1px 0 rgba(226, 246, 237, 0.08), 0 4px 14px rgba(4, 12, 9, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 4px 14px color-mix(in srgb, var(--paper-12) 5%, transparent);
 }
 
 .message.agent .message-bubble {
   flex: 0 1 auto;
   max-width: min(100%, var(--measure-reading));
   --bubble-bg: color-mix(in srgb, var(--chat-surface) 72%, transparent);
-  border: 1px solid color-mix(in srgb, var(--jade-7) 34%, var(--chat-line));
+  border: 1px solid color-mix(in srgb, var(--sky-7) 28%, var(--chat-line));
   border-bottom-left-radius: 5px;
   color: var(--chat-text);
 }
@@ -2090,11 +2205,18 @@ body.chat-expanded-open {
 
 .message.user .message-bubble {
   max-width: min(100%, 54ch);
-  --bubble-bg: color-mix(in srgb, var(--jade-8) 82%, transparent);
-  border: 1px solid color-mix(in srgb, var(--jade-9) 34%, transparent);
+  --bubble-bg: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--orchid-5) 46%, var(--chat-surface)) 72%,
+    transparent
+  );
+  border: 1px solid color-mix(in srgb, var(--orchid-6) 42%, var(--chat-line));
   border-bottom-right-radius: 5px;
   background: var(--bubble-bg);
-  color: var(--ink-0);
+  color: var(--paper-11);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 6px 16px -12px color-mix(in srgb, var(--orchid-8) 36%, transparent);
 }
 
 .message.user .message-bubble::after {
@@ -2104,15 +2226,18 @@ body.chat-expanded-open {
 }
 
 .message.user .period-chip {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   margin-bottom: 4px;
   padding: 1px 7px;
+  border: 1px solid color-mix(in srgb, var(--sky-6) 46%, var(--paper-0));
   border-radius: var(--r-full);
-  background: rgba(7, 10, 9, 0.16);
-  color: rgba(7, 10, 9, 0.78);
+  background: color-mix(in srgb, var(--sky-bg) 82%, var(--paper-0));
+  color: var(--sky-8);
   font-size: var(--fs-micro);
   font-weight: 600;
   line-height: 1.6;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
 .message.error-message {
@@ -2163,7 +2288,7 @@ body.chat-expanded-open {
   width: 4px;
   height: 4px;
   border-radius: var(--r-full);
-  background: var(--jade-7);
+  background: var(--orchid-7);
   opacity: 0.35;
 }
 
@@ -2190,8 +2315,8 @@ body.chat-expanded-open {
   display: grid;
   gap: var(--sp-2);
   padding: var(--sp-3) var(--sp-5) var(--sp-4);
-  border-top: 1px solid var(--chat-line);
-  background: var(--chat-bg);
+  border-top: 1px solid color-mix(in srgb, var(--chat-line) 72%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--paper-0) 48%, transparent);
 }
 
 .quick-prompts {
@@ -2206,7 +2331,10 @@ body.chat-expanded-open {
   border: 1px solid var(--chat-line);
   border-radius: var(--r-full);
   color: var(--chat-text);
-  background: var(--chat-surface);
+  background: var(--chat-glass-medium);
+  -webkit-backdrop-filter: blur(10px) saturate(1.12);
+  backdrop-filter: blur(10px) saturate(1.12);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--paper-0) 58%, transparent);
   font-size: var(--fs-xs);
   font-weight: 500;
   transition:
@@ -2217,9 +2345,9 @@ body.chat-expanded-open {
 }
 
 .quick-prompts button:hover {
-  border-color: var(--jade-7);
-  background: var(--jade-bg);
-  color: var(--jade-9);
+  border-color: var(--orchid-7);
+  background: var(--orchid-bg);
+  color: var(--orchid-9);
 }
 
 .quick-prompts button:active {
@@ -2238,13 +2366,19 @@ body.chat-expanded-open {
   padding: 5px;
   border: 1px solid var(--chat-line);
   border-radius: var(--r-lg);
-  background: var(--chat-input);
+  background: var(--chat-glass-light);
+  -webkit-backdrop-filter: blur(16px) saturate(1.18);
+  backdrop-filter: blur(16px) saturate(1.18);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--paper-0) 72%, transparent), var(--shadow-1);
   transition: border-color var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
 }
 
 .chat-input-row:focus-within {
-  border-color: var(--jade-7);
-  box-shadow: 0 0 0 3px rgba(46, 158, 123, 0.12);
+  border-color: var(--orchid-7);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--paper-0) 72%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--orchid-6) 17%, transparent),
+    var(--shadow-1);
 }
 
 .chat-form input {
@@ -2266,7 +2400,7 @@ body.chat-expanded-open {
 }
 
 .chat-form input::placeholder {
-  color: #9eb5a9;
+  color: var(--chat-muted);
 }
 
 .chat-send {
@@ -2276,8 +2410,8 @@ body.chat-expanded-open {
   height: 38px;
   padding: 0 14px;
   border-radius: var(--r-md);
-  background: var(--jade-8);
-  color: var(--ink-0);
+  background: var(--orchid-8);
+  color: var(--paper-0);
   font-size: var(--fs-sm);
   font-weight: 600;
   transition: background var(--dur-2) var(--ease-out), transform var(--dur-1) var(--ease-out), opacity var(--dur-2);
@@ -2295,7 +2429,7 @@ body.chat-expanded-open {
 }
 
 .chat-send:hover {
-  background: var(--jade-9);
+  background: var(--orchid-9);
 }
 
 .chat-send:hover svg {
@@ -2374,7 +2508,7 @@ body.chat-expanded-open {
 }
 
 .markdown-message em {
-  color: var(--jade-9);
+  color: var(--orchid-9);
   font-style: normal;
 }
 
@@ -2388,20 +2522,20 @@ body.chat-expanded-open {
 }
 
 .markdown-message li::marker {
-  color: var(--jade-8);
+  color: var(--orchid-8);
 }
 
 .markdown-message blockquote {
   padding: 2px 0 2px 12px;
-  border-left: 2px solid var(--jade-7);
+  border-left: 2px solid var(--orchid-7);
   color: var(--chat-muted);
 }
 
 .markdown-message code {
   padding: 1px 5px;
   border-radius: var(--r-xs);
-  background: var(--ink-4);
-  color: var(--jade-9);
+  background: var(--paper-4);
+  color: var(--orchid-9);
   font-family: var(--mono);
   font-size: 0.9em;
 }
@@ -2455,8 +2589,8 @@ body.chat-expanded-open {
 }
 
 .markdown-message th {
-  color: var(--ink-10);
-  background: var(--ink-3);
+  color: var(--paper-10);
+  background: var(--paper-3);
   font-weight: 600;
 }
 
@@ -2473,7 +2607,7 @@ body.chat-expanded-open {
   grid-template-columns: 1.35fr 1fr 1fr 1fr;
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
-  background: var(--surface);
+  background: var(--paper-1);
   box-shadow: var(--edge);
   overflow: hidden;
 }
@@ -2519,14 +2653,21 @@ body.chat-expanded-open {
   height: 12px;
   border-radius: var(--r-full);
   overflow: hidden;
-  background: var(--ink-4);
+  background: color-mix(in srgb, var(--paper-0) 58%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--paper-0) 68%, var(--line));
 }
 
 .composition-seg {
   flex: var(--segment-weight, 1) 1 0;
   height: 100%;
   min-width: 3px;
-  background: var(--seg-color, var(--ink-6));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--seg-color, var(--paper-6)) 78%, var(--paper-0)),
+    var(--seg-color, var(--paper-6))
+  );
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--paper-0) 68%, transparent);
+  opacity: 0.9;
   transition: opacity var(--motion-data) var(--ease-out);
 }
 
@@ -2552,7 +2693,14 @@ body.chat-expanded-open {
   height: 8px;
   flex: none;
   border-radius: 2px;
-  background: var(--seg-color, var(--ink-6));
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--seg-color, var(--paper-6)) 72%, var(--paper-0)),
+    var(--seg-color, var(--paper-6))
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--paper-0) 72%, transparent),
+    0 1px 2px color-mix(in srgb, var(--seg-color, var(--paper-6)) 18%, transparent);
 }
 
 .composition-legend b {
@@ -2571,6 +2719,26 @@ body.chat-expanded-open {
 .analysis-feed,
 .category-console {
   padding: var(--sp-5);
+}
+
+.analysis-feed {
+  background: var(--surface);
+}
+
+.category-console {
+  border-color: color-mix(in srgb, var(--paper-0) 62%, var(--line));
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--paper-0) 70%, transparent),
+      color-mix(in srgb, var(--cream-bg) 48%, transparent)
+    ),
+    color-mix(in srgb, var(--surface) 42%, transparent);
+  box-shadow:
+    0 12px 28px -22px color-mix(in srgb, var(--paper-12) 26%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  -webkit-backdrop-filter: blur(18px) saturate(0.88);
+  backdrop-filter: blur(18px) saturate(0.88);
 }
 
 /* 标题下的一行说明：让人知道下面那些按钮是干什么用的，只说一次。 */
@@ -2593,21 +2761,21 @@ body.chat-expanded-open {
   padding: var(--sp-3) var(--sp-4) var(--sp-3) var(--sp-3);
   border: 1px solid var(--line);
   border-radius: var(--r-md);
-  background: var(--ink-1);
+  background: var(--paper-1);
   transition: border-color var(--dur-2) var(--ease-out), background var(--dur-2) var(--ease-out);
 }
 
 .decision-item:hover {
   border-color: var(--line-strong);
-  background: var(--ink-3);
+  background: var(--paper-3);
 }
 
 .decision-type {
   align-self: start;
   padding: 3px 8px;
   border-radius: var(--r-xs);
-  background: var(--ink-4);
-  color: var(--ink-10);
+  background: var(--paper-4);
+  color: var(--paper-10);
   font-size: var(--fs-micro);
   font-weight: 500;
   letter-spacing: 0.02em;
@@ -2615,25 +2783,18 @@ body.chat-expanded-open {
 }
 
 .decision-item.warn {
-  border-color: var(--amber-6);
-  background: var(--amber-bg);
+  border-color: var(--orchid-6);
+  background: color-mix(in srgb, var(--orchid-bg) 82%, var(--paper-0));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
 .decision-item.warn .decision-type {
-  background: rgba(224, 172, 99, 0.14);
-  color: var(--amber-8);
+  background: color-mix(in srgb, var(--orchid-6) 18%, var(--paper-0));
+  color: var(--orchid-9);
 }
 
-/* 「没超支」也是结论。全篇都用琥珀色警告，用户会当噪音直接跳过。 */
-.decision-item.good {
-  border-color: var(--jade-line);
-  background: var(--jade-bg);
-}
-
-.decision-item.good .decision-type {
-  background: rgba(76, 158, 132, 0.14);
-  color: var(--jade-8);
-}
+/* 粉色强调框只留给「提醒」这一类（warn）。正向与中性状态一律用默认的中性卡片，
+   否则三条里两条都是粉的，强调就失去了意义。.good 因此不再覆盖任何颜色。 */
 
 .decision-copy strong {
   display: block;
@@ -2664,11 +2825,7 @@ body.chat-expanded-open {
 }
 
 .decision-item.warn .decision-actions {
-  border-top-color: rgba(224, 172, 99, 0.22);
-}
-
-.decision-item.good .decision-actions {
-  border-top-color: var(--jade-line);
+  border-top-color: var(--orchid-line);
 }
 
 .decision-action {
@@ -2706,15 +2863,33 @@ body.chat-expanded-open {
   color: var(--text-strong);
 }
 
-/* 追问是这块想被点的那个动作，所以只有它常驻强调色。 */
+/* 每条结论的第一步统一用天青查看数据，第二步用淡粉继续追问。 */
+.decision-action[data-decision-action="ledger"],
+.decision-action[data-decision-action="trend"] {
+  border-color: color-mix(in srgb, var(--sky-6) 46%, var(--paper-0));
+  background: color-mix(in srgb, var(--sky-bg) 82%, var(--paper-0));
+  color: var(--sky-8);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.decision-action[data-decision-action="ledger"]:hover,
+.decision-action[data-decision-action="trend"]:hover {
+  border-color: var(--sky-6);
+  background: var(--sky-bg);
+  color: var(--sky-8);
+}
+
 .decision-action.is-ask {
-  color: var(--jade-8);
+  border-color: color-mix(in srgb, var(--orchid-6) 42%, var(--paper-0));
+  background: color-mix(in srgb, var(--orchid-bg) 72%, var(--paper-0));
+  color: var(--orchid-9);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
 .decision-action.is-ask:hover {
-  border-color: var(--jade-line);
-  background: var(--jade-bg);
-  color: var(--jade-9);
+  border-color: var(--orchid-6);
+  background: var(--orchid-bg);
+  color: var(--orchid-9);
 }
 
 /* — 场景权重：条形排行 — */
@@ -2761,7 +2936,10 @@ body.chat-expanded-open {
   grid-column: 1 / -1;
   height: 4px;
   border-radius: var(--r-full);
-  background: var(--ink-4);
+  background: color-mix(in srgb, var(--paper-4) 56%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--paper-0) 58%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--line) 32%, transparent);
   overflow: hidden;
 }
 
@@ -2770,7 +2948,13 @@ body.chat-expanded-open {
   width: 100%;
   height: 100%;
   border-radius: inherit;
-  background: var(--seg-color, var(--jade-7));
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--seg-color, var(--orchid-7)) 82%, var(--paper-0)),
+    var(--seg-color, var(--orchid-7))
+  );
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--paper-0) 62%, transparent);
+  opacity: 0.9;
   transform: scaleX(var(--category-ratio, 0));
   transform-origin: left center;
   transition: transform var(--motion-data) var(--ease-out);
@@ -2816,7 +3000,7 @@ body.chat-expanded-open {
   padding: 0 12px;
   border: 1px solid var(--line);
   border-radius: var(--r-full);
-  background: var(--ink-2);
+  background: var(--paper-2);
   color: var(--muted);
   font-size: var(--fs-xs);
   font-weight: 500;
@@ -2830,14 +3014,14 @@ body.chat-expanded-open {
 .ledger-filter-chip:hover,
 .ledger-filter-more:hover {
   border-color: var(--line-strong);
-  background: var(--ink-4);
+  background: var(--paper-4);
   color: var(--text);
 }
 
 .ledger-filter-chip.active {
   border-color: transparent;
-  background: var(--ink-11);
-  color: var(--ink-0);
+  background: var(--paper-11);
+  color: var(--paper-0);
   font-weight: 500;
 }
 
@@ -2848,9 +3032,9 @@ body.chat-expanded-open {
   align-items: center;
   gap: 6px;
   max-width: 200px;
-  border-color: var(--jade-line);
-  background: var(--jade-bg);
-  color: var(--jade-9);
+  border-color: var(--orchid-line);
+  background: var(--orchid-bg);
+  color: var(--orchid-9);
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -2864,14 +3048,14 @@ body.chat-expanded-open {
 
 .ledger-filter-chip.is-merchant:hover,
 .ledger-filter-chip.is-range:hover {
-  border-color: var(--jade-7);
-  background: var(--jade-bg);
-  color: var(--jade-9);
+  border-color: var(--orchid-7);
+  background: var(--orchid-bg);
+  color: var(--orchid-9);
 }
 
 .ledger-filter-chip.is-merchant:hover span,
 .ledger-filter-chip.is-range:hover span {
-  color: var(--jade-9);
+  color: var(--orchid-9);
 }
 
 /* 区间胶囊用等宽数字，7/13-7/19 这种日期不会跳来跳去 */
@@ -2885,7 +3069,7 @@ body.chat-expanded-open {
   padding: 0 12px;
   border: 1px solid var(--line);
   border-radius: var(--r-full);
-  background: var(--ink-2);
+  background: var(--paper-2);
   color: var(--muted);
   font-size: var(--fs-xs);
   font-weight: 500;
@@ -2899,14 +3083,14 @@ body.chat-expanded-open {
 .ledger-filter-chip:hover,
 .ledger-filter-more:hover {
   border-color: var(--line-strong);
-  background: var(--ink-4);
+  background: var(--paper-4);
   color: var(--text);
 }
 
 .ledger-filter-chip.active {
   border-color: transparent;
-  background: var(--ink-11);
-  color: var(--ink-0);
+  background: var(--paper-11);
+  color: var(--paper-0);
   font-weight: 500;
 }
 
@@ -2916,9 +3100,9 @@ body.chat-expanded-open {
   align-items: center;
   gap: 6px;
   max-width: 200px;
-  border-color: var(--jade-line);
-  background: var(--jade-bg);
-  color: var(--jade-9);
+  border-color: var(--orchid-line);
+  background: var(--orchid-bg);
+  color: var(--orchid-9);
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -2930,13 +3114,13 @@ body.chat-expanded-open {
 }
 
 .ledger-filter-chip.is-merchant:hover {
-  border-color: var(--jade-7);
-  background: var(--jade-bg);
-  color: var(--jade-9);
+  border-color: var(--orchid-7);
+  background: var(--orchid-bg);
+  color: var(--orchid-9);
 }
 
 .ledger-filter-chip.is-merchant:hover span {
-  color: var(--jade-9);
+  color: var(--orchid-9);
 }
 
 .ledger-filter-more {
@@ -2951,7 +3135,7 @@ body.chat-expanded-open {
 
 .ledger-filter-more.active {
   border-color: var(--line-strong);
-  background: var(--ink-4);
+  background: var(--paper-4);
   color: var(--text-strong);
 }
 
@@ -2964,7 +3148,7 @@ body.chat-expanded-open {
   padding: var(--sp-5);
   border: 1px solid var(--line-strong);
   border-radius: var(--r-lg);
-  background: var(--ink-2);
+  background: var(--paper-2);
   box-shadow: var(--shadow-4);
   opacity: 0;
   visibility: hidden;
@@ -3024,7 +3208,7 @@ body.chat-expanded-open {
 .ledger-table thead th {
   padding: 11px var(--sp-5);
   border-bottom: 1px solid var(--line);
-  background: var(--ink-3);
+  background: var(--paper-3);
   color: var(--muted);
   font-size: var(--fs-micro);
   font-weight: 500;
@@ -3055,7 +3239,7 @@ body.chat-expanded-open {
 
 .txn-row td {
   padding: 13px var(--sp-5);
-  border-bottom: 1px solid var(--ink-3);
+  border-bottom: 1px solid var(--paper-3);
   vertical-align: middle;
   transition: background var(--dur-2) var(--ease-out);
 }
@@ -3065,7 +3249,7 @@ body.chat-expanded-open {
 }
 
 .txn-row:hover td {
-  background: var(--ink-3);
+  background: var(--paper-3);
 }
 
 .td-time {
@@ -3098,7 +3282,7 @@ body.chat-expanded-open {
   align-items: center;
   gap: 6px;
   max-width: 100%;
-  color: var(--ink-10);
+  color: var(--paper-10);
   font-size: var(--fs-xs);
 }
 
@@ -3135,7 +3319,7 @@ body.chat-expanded-open {
 }
 
 .td-amount.is-inflow {
-  color: var(--jade-8);
+  color: var(--orchid-8);
 }
 
 .ledger-pagination:empty {
@@ -3169,7 +3353,7 @@ body.chat-expanded-open {
   padding: 0 8px;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
-  background: var(--ink-2);
+  background: var(--paper-2);
   color: var(--text-strong);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
@@ -3177,7 +3361,7 @@ body.chat-expanded-open {
 }
 
 .pagination-jump input:focus-visible {
-  border-color: var(--jade-line);
+  border-color: var(--orchid-line);
 }
 
 .pagination-actions {
@@ -3191,8 +3375,8 @@ body.chat-expanded-open {
   padding: 0 12px;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
-  background: var(--ink-2);
-  color: var(--ink-10);
+  background: var(--paper-2);
+  color: var(--paper-10);
   font-size: var(--fs-xs);
   transition: border-color var(--dur-2), background var(--dur-2), color var(--dur-2);
 }
@@ -3200,7 +3384,7 @@ body.chat-expanded-open {
 .pagination-actions button:hover:not([disabled]),
 .pagination-jump button:hover {
   border-color: var(--line-strong);
-  background: var(--ink-4);
+  background: var(--paper-4);
   color: var(--text-strong);
 }
 
@@ -3227,8 +3411,8 @@ body.chat-expanded-open {
   margin-bottom: 2px;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
-  background: var(--ink-3);
-  color: var(--ink-7);
+  background: var(--paper-3);
+  color: var(--paper-7);
 }
 
 .empty-state-icon svg {
@@ -3275,13 +3459,13 @@ td .empty-state {
 }
 
 .app-error h1 {
-  color: var(--ink-12);
+  color: var(--paper-12);
   font-size: var(--fs-lg);
   font-weight: 600;
 }
 
 .app-error p {
-  color: var(--ink-10);
+  color: var(--paper-10);
   font-size: var(--fs-sm);
   line-height: 1.7;
 }
@@ -3299,7 +3483,7 @@ body.modal-open {
   display: grid;
   place-items: center;
   padding: var(--sp-6);
-  background: rgba(4, 7, 6, 0.72);
+  background: color-mix(in srgb, var(--paper-12) 48%, transparent);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   opacity: 0;
@@ -3324,7 +3508,7 @@ body.modal-open {
   flex-direction: column;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-xl);
-  background: var(--ink-2);
+  background: var(--paper-2);
   box-shadow: var(--shadow-4);
   opacity: 0;
   transform: translateY(12px) scale(0.985);
@@ -3370,7 +3554,7 @@ body.modal-open {
   flex: none;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
-  background: var(--ink-3);
+  background: var(--paper-3);
   color: var(--muted);
   transition: color var(--dur-2), border-color var(--dur-2), background var(--dur-2);
 }
@@ -3386,7 +3570,7 @@ body.modal-open {
 
 .modal-close:hover {
   border-color: var(--line-strong);
-  background: var(--ink-4);
+  background: var(--paper-4);
   color: var(--text-strong);
 }
 
@@ -3394,7 +3578,7 @@ body.modal-open {
 
 .profile-report-backdrop {
   padding: 12px;
-  background: rgba(3, 7, 6, 0.84);
+  background: color-mix(in srgb, var(--paper-12) 60%, transparent);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
@@ -3403,11 +3587,11 @@ body.modal-open {
   width: min(1320px, 100%);
   height: calc(100dvh - 24px);
   max-height: none;
-  border-color: rgba(88, 205, 164, 0.3);
+  border-color: color-mix(in srgb, var(--orchid-6) 42%, transparent);
   border-radius: 20px;
   background:
-    radial-gradient(80% 100% at 100% 0%, rgba(46, 158, 123, 0.12), transparent 66%),
-    var(--ink-1);
+    radial-gradient(80% 100% at 100% 0%, color-mix(in srgb, var(--orchid-6) 17%, transparent), transparent 66%),
+    var(--paper-1);
 }
 
 .profile-report-header {
@@ -3418,7 +3602,7 @@ body.modal-open {
   gap: var(--sp-5);
   padding: 12px var(--sp-5);
   border-bottom: 1px solid var(--line);
-  background: rgba(10, 14, 13, 0.82);
+  background: color-mix(in srgb, var(--paper-0) 86%, transparent);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
@@ -3474,9 +3658,9 @@ body.modal-open {
 }
 
 .profile-report-refresh:hover {
-  border-color: var(--jade-line);
-  background: var(--jade-bg);
-  color: var(--jade-9);
+  border-color: var(--orchid-line);
+  background: var(--orchid-bg);
+  color: var(--orchid-9);
 }
 
 .profile-report-refresh:disabled,
@@ -3492,9 +3676,9 @@ body.modal-open {
   justify-content: center;
   gap: var(--sp-3);
   padding: 7px var(--sp-5);
-  border-bottom: 1px solid var(--jade-line);
-  background: var(--jade-bg);
-  color: var(--jade-9);
+  border-bottom: 1px solid var(--orchid-line);
+  background: var(--orchid-bg);
+  color: var(--orchid-9);
   font-size: var(--fs-xs);
 }
 
@@ -3550,7 +3734,7 @@ body.modal-open {
   content: "";
   position: absolute;
   inset: 28px;
-  border: 1px solid rgba(88, 205, 164, 0.08);
+  border: 1px solid color-mix(in srgb, var(--orchid-6) 11%, transparent);
   border-radius: 14px;
   pointer-events: none;
 }
@@ -3583,16 +3767,24 @@ body.modal-open {
 .profile-report-cover {
   overflow: hidden;
   background:
-    radial-gradient(60% 90% at 75% 48%, rgba(88, 205, 164, 0.12), transparent 68%),
-    linear-gradient(110deg, var(--ink-1) 0%, var(--ink-1) 46%, rgba(15, 25, 22, 0.92) 72%, var(--ink-1) 100%);
+    radial-gradient(60% 90% at 75% 48%, color-mix(in srgb, var(--sky-6) 20%, transparent), transparent 68%),
+    linear-gradient(
+      110deg,
+      var(--paper-1) 0%,
+      var(--paper-1) 46%,
+      color-mix(in srgb, var(--orchid-5) 52%, transparent) 72%,
+      var(--paper-1) 100%
+    );
 }
 
 .profile-cover-image {
   position: absolute;
   inset: 0 0 0 36%;
-  background: url("./assets/cfo-agent-hero.webp") center / cover no-repeat;
-  opacity: 0.34;
-  filter: saturate(0.78) brightness(1.14) contrast(0.92);
+  background: url("./assets/cfo-agent-hero.webp") center / contain no-repeat;
+  /* 同上：白底黑线素材，multiply 后是封面上的一层淡线稿 */
+  opacity: 0.2;
+  filter: contrast(0.96);
+  mix-blend-mode: multiply;
   mask-image: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, 0.42) 18%, #000 58%, transparent 100%);
   -webkit-mask-image: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, 0.42) 18%, #000 58%, transparent 100%);
   pointer-events: none;
@@ -3614,12 +3806,12 @@ body.modal-open {
   width: 72px;
   height: 2px;
   margin-bottom: var(--sp-5);
-  background: var(--jade-8);
+  background: var(--orchid-8);
 }
 
 .profile-cover-content > p {
   margin-top: var(--sp-5);
-  color: var(--jade-9);
+  color: var(--orchid-9);
   font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
 }
@@ -3657,7 +3849,7 @@ body.modal-open {
   width: min(30vw, 300px);
   aspect-ratio: 1;
   justify-self: end;
-  border: 1px solid rgba(88, 205, 164, 0.42);
+  border: 1px solid color-mix(in srgb, var(--orchid-6) 59%, transparent);
   border-radius: 50%;
 }
 
@@ -3672,13 +3864,13 @@ body.modal-open {
 
 .profile-persona-seal::before {
   inset: 12%;
-  border: 1px solid rgba(88, 205, 164, 0.22);
+  border: 1px solid color-mix(in srgb, var(--orchid-6) 31%, transparent);
 }
 
 .profile-persona-seal::after {
   inset: 28%;
-  background: rgba(88, 205, 164, 0.12);
-  box-shadow: 0 18px 52px rgba(3, 9, 7, 0.42);
+  background: color-mix(in srgb, var(--orchid-6) 17%, transparent);
+  box-shadow: 0 18px 52px color-mix(in srgb, var(--paper-12) 13%, transparent);
 }
 
 .profile-persona-seal span {
@@ -3686,8 +3878,8 @@ body.modal-open {
   height: 13px;
   top: 10%;
   right: 23%;
-  background: var(--jade-8);
-  box-shadow: 0 0 0 8px rgba(88, 205, 164, 0.08);
+  background: var(--orchid-8);
+  box-shadow: 0 0 0 8px color-mix(in srgb, var(--orchid-6) 11%, transparent);
 }
 
 .profile-persona-seal i {
@@ -3695,7 +3887,7 @@ body.modal-open {
   height: 7px;
   bottom: 17%;
   left: 11%;
-  background: var(--ink-8);
+  background: var(--paper-8);
 }
 
 .profile-persona-copy {
@@ -3709,7 +3901,7 @@ body.modal-open {
 }
 
 .profile-persona-copy h3 {
-  color: var(--jade-9);
+  color: var(--orchid-9);
   font-size: clamp(46px, 6.2vw, 90px);
 }
 
@@ -3725,7 +3917,7 @@ body.modal-open {
 .profile-persona-intro {
   max-width: 68ch;
   margin-top: clamp(18px, 2.4vw, 28px);
-  color: var(--ink-10);
+  color: var(--paper-10);
   font-size: var(--fs-md);
   line-height: 1.7;
 }
@@ -3766,7 +3958,7 @@ body.modal-open {
 .profile-persona-points p,
 .profile-cfo-takeaways p {
   margin-top: 3px;
-  color: var(--ink-10);
+  color: var(--paper-10);
   font-size: var(--fs-sm);
   line-height: 1.55;
 }
@@ -3793,7 +3985,7 @@ body.modal-open {
 }
 
 .profile-tag-row > span {
-  color: var(--jade-8);
+  color: var(--orchid-8);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
 }
@@ -3810,7 +4002,7 @@ body.modal-open {
 .profile-moment-row p,
 .profile-highlight-item p {
   margin-top: 4px;
-  color: var(--ink-10);
+  color: var(--paper-10);
   font-size: var(--fs-sm);
   line-height: 1.65;
 }
@@ -3850,7 +4042,7 @@ body.modal-open {
 .profile-highlight-item strong {
   display: block;
   margin-bottom: var(--sp-3);
-  color: var(--jade-9);
+  color: var(--orchid-9);
   font-size: clamp(34px, 4vw, 58px);
   line-height: 1;
   font-weight: 600;
@@ -3896,7 +4088,7 @@ body.modal-open {
 .profile-moment-row li {
   position: relative;
   padding-left: 14px;
-  color: var(--ink-10);
+  color: var(--paper-10);
   font-size: var(--fs-sm);
   line-height: 1.6;
 }
@@ -3908,7 +4100,7 @@ body.modal-open {
   left: 1px;
   width: 5px;
   height: 1px;
-  background: var(--jade-8);
+  background: var(--orchid-8);
 }
 
 .profile-moment-row:last-child {
@@ -3936,7 +4128,7 @@ body.modal-open {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: var(--jade-9);
+  color: var(--orchid-9);
   font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.03em;
@@ -3968,7 +4160,7 @@ body.modal-open {
 .profile-wellbeing-overview > p {
   max-width: 46ch;
   margin-top: var(--sp-3);
-  color: var(--ink-10);
+  color: var(--paper-10);
   font-size: var(--fs-sm);
   line-height: 1.7;
 }
@@ -3986,7 +4178,7 @@ body.modal-open {
   width: 24px;
   height: 24px;
   fill: none;
-  stroke: var(--jade-9);
+  stroke: var(--orchid-9);
   stroke-width: 1.4;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -4045,7 +4237,7 @@ body.modal-open {
 
 .profile-wellbeing-signals li > p {
   margin-top: 5px;
-  color: var(--ink-10);
+  color: var(--paper-10);
   font-size: var(--fs-sm);
   line-height: 1.6;
 }
@@ -4078,9 +4270,9 @@ body.modal-open {
   display: grid;
   place-items: center;
   justify-self: end;
-  border: 1px solid var(--jade-line);
+  border: 1px solid var(--orchid-line);
   border-radius: 50%;
-  color: var(--jade-9);
+  color: var(--orchid-9);
 }
 
 .profile-cfo-mark span {
@@ -4095,7 +4287,7 @@ body.modal-open {
 
 .profile-cfo-headline {
   margin-top: var(--sp-5);
-  color: var(--jade-9);
+  color: var(--orchid-9);
   font-size: clamp(18px, 2vw, 24px);
   line-height: 1.55;
   font-weight: 500;
@@ -4152,7 +4344,7 @@ body.modal-open {
   top: 0.72em;
   width: 7px;
   height: 1px;
-  background: var(--jade-8);
+  background: var(--orchid-8);
 }
 
 .profile-cfo-ask {
@@ -4163,15 +4355,15 @@ body.modal-open {
   margin-top: var(--sp-5);
   padding: 0 18px;
   border-radius: var(--r-md);
-  background: var(--jade-8);
-  color: var(--ink-0);
+  background: var(--orchid-8);
+  color: var(--paper-0);
   font-size: var(--fs-sm);
   font-weight: 700;
   transition: background var(--dur-2), transform var(--dur-1);
 }
 
 .profile-cfo-ask:hover {
-  background: var(--jade-9);
+  background: var(--orchid-9);
 }
 
 .profile-cfo-ask:active {
@@ -4196,7 +4388,7 @@ body.modal-open {
   gap: var(--sp-4);
   padding: 10px var(--sp-5);
   border-top: 1px solid var(--line);
-  background: rgba(10, 14, 13, 0.86);
+  background: color-mix(in srgb, var(--paper-0) 88%, transparent);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
@@ -4213,9 +4405,9 @@ body.modal-open {
 }
 
 .profile-report-nav-button:hover:not(:disabled) {
-  border-color: var(--jade-line);
-  background: var(--jade-bg);
-  color: var(--jade-9);
+  border-color: var(--orchid-line);
+  background: var(--orchid-bg);
+  color: var(--orchid-9);
 }
 
 .profile-report-nav-button:disabled {
@@ -4249,13 +4441,13 @@ body.modal-open {
   position: absolute;
   inset: 7px 4px;
   border-radius: 2px;
-  background: var(--ink-7);
+  background: var(--paper-7);
   transition: inset var(--dur-2) var(--ease-out), background var(--dur-2);
 }
 
 .profile-report-dots button.is-active::after {
   inset-inline: 1px;
-  background: var(--jade-8);
+  background: var(--orchid-8);
 }
 
 .profile-report-state {
@@ -4288,7 +4480,7 @@ body.modal-open {
   position: relative;
   display: grid;
   place-items: center;
-  border: 1px solid var(--jade-line);
+  border: 1px solid var(--orchid-line);
   border-radius: 50%;
 }
 
@@ -4297,7 +4489,7 @@ body.modal-open {
   width: 38px;
   height: 38px;
   border-radius: 50%;
-  background: var(--jade-bg);
+  background: var(--orchid-bg);
 }
 
 .profile-loading-orbit i {
@@ -4305,7 +4497,7 @@ body.modal-open {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--jade-8);
+  background: var(--orchid-8);
   transform-origin: 3px 48px;
 }
 
@@ -4342,17 +4534,17 @@ body.modal-open {
 
 .profile-loading-stages li.is-active,
 .profile-loading-stages li.is-done {
-  color: var(--jade-9);
+  color: var(--orchid-9);
 }
 
 .profile-loading-stages li.is-active::before,
 .profile-loading-stages li.is-done::before {
-  background: var(--jade-8);
+  background: var(--orchid-8);
 }
 
 .profile-error-mark {
   color: var(--rose-8);
-  border-color: rgba(229, 131, 121, 0.35);
+  border-color: color-mix(in srgb, var(--rose-6) 49%, transparent);
 }
 
 .profile-error-mark svg {
@@ -4393,7 +4585,7 @@ body.modal-open {
   position: relative;
   z-index: 1;
   outline: 0;
-  box-shadow: inset 0 0 0 2px var(--jade-7);
+  box-shadow: inset 0 0 0 2px var(--orchid-7);
 }
 
 .drawer-backdrop {
@@ -4402,7 +4594,7 @@ body.modal-open {
   z-index: var(--z-overlay);
   display: grid;
   justify-items: end;
-  background: rgba(4, 7, 6, 0.72);
+  background: color-mix(in srgb, var(--paper-12) 48%, transparent);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   opacity: 0;
@@ -4426,7 +4618,7 @@ body.modal-open {
   padding: var(--sp-6);
   overflow-y: auto;
   border-left: 1px solid var(--line-strong);
-  background: var(--ink-2);
+  background: var(--paper-2);
   box-shadow: var(--shadow-4);
   opacity: 0;
   transform: translateX(28px);
@@ -4469,10 +4661,10 @@ body.modal-open {
   align-items: center;
   min-height: 24px;
   padding: 0 9px;
-  border: 1px solid var(--jade-line);
+  border: 1px solid var(--orchid-line);
   border-radius: var(--r-full);
-  background: var(--jade-bg);
-  color: var(--jade-9);
+  background: var(--orchid-bg);
+  color: var(--orchid-9);
   font-size: var(--fs-micro);
   font-weight: 600;
 }
@@ -4492,14 +4684,14 @@ body.modal-open {
   padding: var(--sp-5);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
-  background: var(--ink-1);
+  background: var(--paper-1);
   color: var(--muted);
   font-size: var(--fs-sm);
   line-height: 1.65;
 }
 
 .evidence-error {
-  border-color: rgba(229, 131, 121, 0.35);
+  border-color: color-mix(in srgb, var(--rose-6) 49%, transparent);
   background: var(--rose-bg);
 }
 
@@ -4509,9 +4701,9 @@ body.modal-open {
 }
 
 .evidence-note {
-  border-color: var(--jade-line);
-  background: var(--jade-bg);
-  color: var(--jade-9);
+  border-color: var(--orchid-line);
+  background: var(--orchid-bg);
+  color: var(--orchid-9);
 }
 
 .evidence-section {
@@ -4545,7 +4737,7 @@ body.modal-open {
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
-  background: var(--ink-1);
+  background: var(--paper-1);
 }
 
 .evidence-image-frame img {
@@ -4580,7 +4772,7 @@ body.modal-open {
   padding: var(--sp-3);
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
-  background: var(--ink-3);
+  background: var(--paper-3);
 }
 
 .evidence-field span {
@@ -4606,15 +4798,15 @@ body.modal-open {
 .evidence-edited {
   padding: 1px 5px;
   border-radius: 999px;
-  background: var(--jade-bg);
-  color: var(--jade-9);
+  background: var(--orchid-bg);
+  color: var(--orchid-9);
   font-size: var(--fs-micro);
   font-style: normal;
   line-height: 1.5;
 }
 
 .evidence-field.is-edited {
-  box-shadow: inset 2px 0 0 var(--jade-8);
+  box-shadow: inset 2px 0 0 var(--orchid-8);
 }
 
 .evidence-grid.is-editing .evidence-field {
@@ -4630,7 +4822,7 @@ body.modal-open {
   padding: 0 var(--sp-2);
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
-  background: var(--ink-1);
+  background: var(--paper-1);
   color: var(--text-strong);
   font-family: inherit;
   font-size: var(--fs-sm);
@@ -4643,7 +4835,7 @@ body.modal-open {
 
 .evidence-grid.is-editing input:focus-visible,
 .evidence-grid.is-editing select:focus-visible {
-  border-color: var(--jade-8);
+  border-color: var(--orchid-8);
   outline: none;
 }
 
@@ -4671,7 +4863,7 @@ body.modal-open {
 
 .evidence-edit-error {
   padding: var(--sp-2) var(--sp-3);
-  border: 1px solid rgba(229, 131, 121, 0.35);
+  border: 1px solid color-mix(in srgb, var(--rose-6) 49%, transparent);
   border-radius: var(--r-sm);
   background: var(--rose-bg);
   color: var(--rose-8);
@@ -4686,8 +4878,8 @@ body.modal-open {
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
-  background: var(--ink-1);
-  color: var(--ink-10);
+  background: var(--paper-1);
+  color: var(--paper-10);
   font-family: var(--mono);
   font-size: var(--fs-xs);
   line-height: 1.75;
@@ -4696,6 +4888,17 @@ body.modal-open {
 }
 
 /* — 趋势 — */
+.trend-modal {
+  --trend-calm-bg: var(--sky-bg);
+  --trend-calm-line: var(--sky-line);
+  --trend-calm: var(--sky-6);
+  --trend-calm-strong: var(--sky-8);
+  --trend-over-bg: var(--orchid-bg);
+  --trend-over-line: var(--orchid-line);
+  --trend-over: var(--orchid-6);
+  --trend-over-strong: var(--orchid-8);
+}
+
 .trend-control {
   display: flex;
   gap: 3px;
@@ -4704,7 +4907,7 @@ body.modal-open {
   padding: 3px;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
-  background: var(--ink-1);
+  background: var(--paper-1);
 }
 
 .trend-control button {
@@ -4723,10 +4926,10 @@ body.modal-open {
 }
 
 .trend-control button.active {
-  background: var(--ink-5);
-  color: var(--text-strong);
+  background: var(--amber-bg);
+  color: var(--amber-8);
   font-weight: 500;
-  box-shadow: var(--shadow-1), var(--edge);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber-6) 54%, var(--line)), var(--shadow-1), var(--edge);
 }
 
 .trend-layout {
@@ -4743,7 +4946,7 @@ body.modal-open {
   padding: var(--sp-4) var(--sp-3) var(--sp-2);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
-  background: var(--ink-1);
+  background: var(--paper-1);
 }
 
 .trend-chart svg {
@@ -4754,12 +4957,12 @@ body.modal-open {
 }
 
 .trend-grid-line {
-  stroke: var(--ink-4);
+  stroke: var(--paper-4);
   stroke-width: 1;
 }
 
 .trend-baseline {
-  stroke: var(--ink-6);
+  stroke: var(--paper-6);
   stroke-width: 1;
 }
 
@@ -4772,34 +4975,34 @@ body.modal-open {
 }
 
 .trend-axis-label.is-current {
-  fill: var(--ink-11);
+  fill: var(--paper-11);
   font-weight: 600;
 }
 
 .trend-budget-line {
-  stroke: var(--amber-6);
+  stroke: var(--trend-over);
   stroke-width: 1;
   stroke-dasharray: 4 5;
 }
 
 .trend-budget-text {
-  fill: var(--amber-8);
+  fill: var(--trend-over-strong);
   font-family: var(--font-data);
   font-size: 12px;
   font-weight: 500;
 }
 
 .trend-col {
-  fill: var(--ink-6);
+  fill: var(--trend-calm);
   transition: fill var(--dur-2) var(--ease-out), opacity var(--dur-2) var(--ease-out);
 }
 
-.trend-col.over-budget {
-  fill: var(--rose-6);
+.trend-col.is-current {
+  fill: var(--trend-calm-strong);
 }
 
-.trend-col.is-current {
-  fill: var(--jade-6);
+.trend-col.over-budget {
+  fill: var(--trend-over);
 }
 
 .trend-hit-zone {
@@ -4809,15 +5012,17 @@ body.modal-open {
 
 .trend-hit-zone:hover ~ .trend-col,
 .trend-slot.is-hover .trend-col {
-  fill: var(--jade-7);
+  fill: var(--trend-calm-strong);
 }
 
 .trend-slot:hover .trend-col {
-  fill: var(--jade-7);
+  fill: var(--trend-calm-strong);
 }
 
+.trend-hit-zone:hover ~ .trend-col.over-budget,
+.trend-slot.is-hover .trend-col.over-budget,
 .trend-slot:hover .trend-col.over-budget {
-  fill: var(--rose-8);
+  fill: var(--trend-over-strong);
 }
 
 .trend-slot:focus-visible {
@@ -4825,9 +5030,13 @@ body.modal-open {
 }
 
 .trend-slot:focus-visible .trend-col {
-  fill: var(--jade-8);
-  stroke: var(--ink-12);
+  fill: var(--trend-calm-strong);
+  stroke: var(--paper-12);
   stroke-width: 1.5;
+}
+
+.trend-slot:focus-visible .trend-col.over-budget {
+  fill: var(--trend-over-strong);
 }
 
 /* ---- 点选联动 ----
@@ -4842,15 +5051,15 @@ body.modal-open {
 }
 
 .trend-slot.is-selected .trend-col {
-  fill: var(--jade-8);
+  fill: var(--trend-calm-strong);
 }
 
 .trend-slot.is-selected .trend-col.over-budget {
-  fill: var(--rose-8);
+  fill: var(--trend-over-strong);
 }
 
 .trend-axis-label.is-selected {
-  fill: var(--ink-12);
+  fill: var(--paper-12);
   font-weight: 600;
 }
 
@@ -4878,16 +5087,17 @@ body.modal-open {
 }
 
 .trend-cell:hover {
-  background: var(--ink-2);
+  background: var(--paper-2);
 }
 
 .trend-cell.is-selected {
-  background: var(--ink-3);
-  box-shadow: inset 2px 0 0 var(--jade-8);
+  background: var(--trend-calm-bg);
+  box-shadow: inset 2px 0 0 var(--trend-calm-strong);
 }
 
 .trend-cell.is-over.is-selected {
-  box-shadow: inset 2px 0 0 var(--rose-8);
+  background: var(--trend-over-bg);
+  box-shadow: inset 2px 0 0 var(--trend-over-strong);
 }
 
 .trend-cell-body {
@@ -4937,12 +5147,12 @@ body.modal-open {
 }
 
 .trend-cell-jump:hover {
-  color: var(--jade-9);
+  color: var(--trend-calm-strong);
 }
 
 /* 键盘走到箭头时必须看得见，否则 Tab 过去像掉进黑洞 */
 .trend-cell-jump:focus-visible {
-  color: var(--jade-9);
+  color: var(--trend-calm-strong);
 }
 
 .trend-cell-label {
@@ -4957,8 +5167,8 @@ body.modal-open {
 .trend-cell-flag {
   padding: 1px 5px;
   border-radius: var(--r-xs);
-  background: var(--jade-bg);
-  color: var(--jade-8);
+  background: var(--trend-calm-bg);
+  color: var(--trend-calm-strong);
   font-size: var(--fs-micro);
   font-style: normal;
   font-weight: 600;
@@ -4985,7 +5195,7 @@ body.modal-open {
 /* 超预算是这块唯一需要一眼认出的信号，所以给足颜色 */
 .trend-cell.is-over .trend-cell-amount,
 .trend-cell.is-over .trend-cell-note {
-  color: var(--rose-8);
+  color: var(--trend-over-strong);
 }
 
 .trend-cell.is-empty .trend-cell-amount {
@@ -5001,7 +5211,7 @@ body.modal-open {
   padding: 9px 11px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
-  background: var(--ink-3);
+  background: var(--paper-3);
   box-shadow: var(--shadow-3);
 }
 
@@ -5024,8 +5234,8 @@ body.modal-open {
   display: block;
   margin-top: 6px;
   padding-top: 6px;
-  border-top: 1px solid var(--line);
-  color: var(--amber-8);
+  border-top: 1px solid var(--trend-over-line);
+  color: var(--trend-over-strong);
   font-size: var(--fs-micro);
   line-height: 1.5;
 }
@@ -5039,9 +5249,13 @@ body.modal-open {
   transition: border-color var(--dur-2) var(--ease-out);
 }
 
-/* 看的是某一根柱子时，整条分栏线转玉色：这一列此刻绑在选中的那一期上 */
+/* 查看某一期时用淡蓝联动；若该期超预算，则整组状态切到粉色。 */
 .trend-budget-panel.is-inspecting {
-  border-color: var(--jade-line);
+  border-color: var(--trend-calm-line);
+}
+
+.trend-budget-panel.is-inspecting.is-over {
+  border-color: var(--trend-over-line);
 }
 
 /* 口径行：这块数字算的是哪一段时间 */
@@ -5057,13 +5271,18 @@ body.modal-open {
   height: 6px;
   flex: none;
   border-radius: 50%;
-  background: var(--ink-6);
+  background: var(--paper-6);
   transition: background var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
 }
 
 .trend-budget-panel.is-inspecting .budget-scope-dot {
-  background: var(--jade-7);
-  box-shadow: 0 0 0 3px rgba(46, 158, 123, 0.16);
+  background: var(--trend-calm-strong);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--trend-calm) 22%, transparent);
+}
+
+.trend-budget-panel.is-inspecting.is-over .budget-scope-dot {
+  background: var(--trend-over-strong);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--trend-over) 22%, transparent);
 }
 
 .budget-scope-text {
@@ -5119,6 +5338,15 @@ body.modal-open {
   gap: 8px;
 }
 
+.trend-budget-panel .meter-fill,
+.trend-budget-panel .meter[data-level="warn"] .meter-fill {
+  background: linear-gradient(90deg, var(--trend-calm-strong), var(--trend-calm));
+}
+
+.trend-budget-panel .meter[data-level="over"] .meter-fill {
+  background: var(--trend-over-strong);
+}
+
 .budget-usage-head {
   display: flex;
   align-items: baseline;
@@ -5140,7 +5368,7 @@ body.modal-open {
 .budget-rest strong {
   display: block;
   margin-top: 5px;
-  color: var(--jade-8);
+  color: var(--trend-calm-strong);
   font-size: var(--fs-2xl);
   font-weight: 600;
   letter-spacing: -0.03em;
@@ -5148,7 +5376,7 @@ body.modal-open {
 }
 
 .budget-rest.is-negative strong {
-  color: var(--rose-8);
+  color: var(--trend-over-strong);
 }
 
 .budget-rest-meta {
@@ -5159,7 +5387,7 @@ body.modal-open {
   margin-top: var(--sp-4);
   padding: 8px 11px;
   border-radius: var(--r-sm);
-  background: var(--ink-3);
+  background: var(--paper-3);
 }
 
 .budget-rest-meta span {
@@ -5198,7 +5426,7 @@ body.modal-open {
   padding-left: calc(var(--sp-5) + 4px);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
-  background: var(--ink-1);
+  background: var(--paper-1);
   overflow: hidden;
 }
 
@@ -5207,13 +5435,13 @@ body.modal-open {
   position: absolute;
   inset: 0 auto 0 0;
   width: 3px;
-  background: var(--ink-6);
+  background: var(--paper-6);
   transition: background var(--dur-3);
 }
 
 .sync-state-card.running::before,
 .sync-state-card.success::before {
-  background: var(--jade-7);
+  background: var(--orchid-7);
 }
 
 .sync-state-card.error::before {
@@ -5255,7 +5483,7 @@ body.modal-open {
   bottom: 0;
   width: 34%;
   height: 2px;
-  background: linear-gradient(90deg, transparent, var(--jade-7), transparent);
+  background: linear-gradient(90deg, transparent, var(--orchid-7), transparent);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -5276,7 +5504,7 @@ body.modal-open {
   display: grid;
   gap: 7px;
   padding: var(--sp-4);
-  background: var(--ink-1);
+  background: var(--paper-1);
 }
 
 .sync-metrics div + div {
@@ -5295,7 +5523,7 @@ body.modal-open {
   max-height: 260px;
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
-  background: var(--ink-1);
+  background: var(--paper-1);
   overflow-y: auto;
 }
 
@@ -5308,7 +5536,7 @@ body.modal-open {
 }
 
 .sync-item + .sync-item {
-  border-top: 1px solid var(--ink-3);
+  border-top: 1px solid var(--paper-3);
 }
 
 .sync-item-title {
@@ -5379,13 +5607,13 @@ body.modal-open {
   padding-left: 12px;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
-  background: var(--ink-1);
+  background: var(--paper-1);
   transition: border-color var(--dur-2), box-shadow var(--dur-2);
 }
 
 .field-control:focus-within {
-  border-color: var(--jade-line);
-  box-shadow: 0 0 0 3px rgba(46, 158, 123, 0.12);
+  border-color: var(--orchid-line);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--orchid-6) 17%, transparent);
 }
 
 .field-control.has-error {
@@ -5470,7 +5698,7 @@ body.modal-open {
 }
 
 .site-foot-note-separator {
-  color: var(--jade-7);
+  color: var(--orchid-7);
   opacity: 0.62;
   font-weight: 600;
 }
@@ -5505,7 +5733,7 @@ body.modal-open {
   padding: 10px 14px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
-  background: var(--ink-3);
+  background: var(--paper-3);
   color: var(--text);
   font-size: var(--fs-sm);
   box-shadow: var(--shadow-3);
@@ -5526,8 +5754,8 @@ body.modal-open {
 }
 
 .toast:hover {
-  border-color: var(--jade-line);
-  background: var(--ink-4);
+  border-color: var(--orchid-line);
+  background: var(--paper-4);
 }
 
 .toast:focus-visible {
@@ -5575,10 +5803,10 @@ body.modal-open {
 @keyframes dotPulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(59, 180, 141, 0.4);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--orchid-6) 56%, transparent);
   }
   55% {
-    box-shadow: 0 0 0 5px rgba(59, 180, 141, 0);
+    box-shadow: 0 0 0 5px transparent;
   }
 }
 
@@ -5967,12 +6195,12 @@ body.modal-open {
   }
 
   .opening-illustration-wrap {
-    min-height: 240px;
+    /* 图是绝对定位的，不撑出内在宽度；这里必须显式 100% 再收口，
+       否则栅格项会收缩成 0 宽。居中用 justify-self，不要用 auto 外边距。 */
+    width: 100%;
+    max-width: 260px;
     margin-left: 0;
-  }
-
-  .opening-illustration {
-    width: min(54%, 178px);
+    justify-self: center;
   }
 }
 
@@ -6029,6 +6257,18 @@ body.modal-open {
     min-height: 380px;
   }
 
+  .hero-chat::before {
+    top: calc(50% - 24px);
+    width: min(calc(100% - 24px), 280px);
+    height: auto;
+  }
+
+  .hero-chat.is-expanded::before {
+    top: 46%;
+    width: min(calc(100% - 24px), 380px);
+    height: auto;
+  }
+
   .chat-expand-placeholder {
     height: min(52dvh, 420px);
     min-height: 380px;
@@ -6036,11 +6276,6 @@ body.modal-open {
 
   .message {
     max-width: 92%;
-  }
-
-  .chat-message-stage::before {
-    inset: 0;
-    opacity: 0.08;
   }
 
   .chat-head,
@@ -6223,7 +6458,56 @@ body.modal-open {
   }
 }
 
+/* 玻璃不是可读性的前提：用户要求减少透明度时退回近实色材料。 */
+@media (prefers-reduced-transparency: reduce) {
+  .hero-chat::before {
+    opacity: 0.32;
+  }
+
+  .chat-head,
+  .hero-chat.is-expanded .chat-head,
+  .chat-foot,
+  .quick-prompts button,
+  .chat-input-row,
+  .message-bubble {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .chat-head,
+  .hero-chat.is-expanded .chat-head,
+  .chat-foot {
+    background: color-mix(in srgb, var(--chat-bg) 94%, transparent);
+  }
+
+  .quick-prompts button,
+  .chat-input-row,
+  .message.agent .message-bubble {
+    background: color-mix(in srgb, var(--chat-surface) 94%, transparent);
+  }
+
+  .message.user .message-bubble {
+    background: color-mix(in srgb, var(--orchid-5) 46%, var(--chat-surface));
+  }
+}
+
+@media (prefers-contrast: more) {
+  .chat-head,
+  .hero-chat.is-expanded .chat-head,
+  .chat-foot,
+  .quick-prompts button,
+  .chat-input-row,
+  .message-bubble {
+    border-color: var(--paper-8);
+    background: color-mix(in srgb, var(--chat-surface) 96%, transparent);
+  }
+}
+
 @media (forced-colors: active) {
+  .hero-chat::before {
+    display: none;
+  }
+
   .panel,
   .stat-row,
   .table-wrap,
