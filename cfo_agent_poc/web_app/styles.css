@@ -158,6 +158,10 @@
   --chat-text: #2a2027;
   --chat-muted: #6d5968;
 
+  /* — 首页卡片玻璃：与 CFO 对话头尾栏共用同一材质重量 — */
+  --home-card-glass: color-mix(in srgb, var(--surface) 50%, transparent);
+  --home-card-glass-filter: blur(12px) saturate(1.12);
+
   /* — 排版角色：中文界面、金融数字、结构化数据各司其职 — */
   --font-ui: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", "Source Han Sans SC",
     -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -729,6 +733,10 @@ body.motion-complete .opening-overlay {
   transform-origin: left center;
 }
 
+.opening-title > span:first-child > i {
+  color: var(--sky-8);
+}
+
 .opening-title > span:last-child > i {
   color: var(--orchid-8);
 }
@@ -1148,7 +1156,9 @@ body.is-scrolled .rail {
   position: relative;
   border: 1px solid var(--line);
   border-radius: var(--r-xl);
-  background: var(--surface);
+  background: var(--home-card-glass);
+  -webkit-backdrop-filter: var(--home-card-glass-filter);
+  backdrop-filter: var(--home-card-glass-filter);
   box-shadow: var(--shadow-2), var(--edge);
 }
 
@@ -1326,7 +1336,7 @@ body.is-scrolled .rail {
   overflow: hidden;
   background:
     radial-gradient(95% 80% at 100% 100%, color-mix(in srgb, var(--orchid-5) 10%, transparent), transparent 66%),
-    var(--surface);
+    var(--home-card-glass);
 }
 
 .hero-figure-top {
@@ -1738,7 +1748,7 @@ body.is-scrolled .rail {
 
 .hero-chat {
   --chat-glass-panel: color-mix(in srgb, var(--chat-bg) 50%, transparent);
-  --chat-glass-panel-filter: blur(12px) saturate(1.12);
+  --chat-glass-panel-filter: var(--home-card-glass-filter);
   --chat-glass-medium: color-mix(in srgb, var(--chat-surface) 58%, transparent);
   --chat-glass-light: color-mix(in srgb, var(--chat-input) 52%, transparent);
   display: grid;
@@ -2607,7 +2617,9 @@ body.chat-expanded-open {
   grid-template-columns: 1.35fr 1fr 1fr 1fr;
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
-  background: var(--paper-1);
+  background: var(--home-card-glass);
+  -webkit-backdrop-filter: var(--home-card-glass-filter);
+  backdrop-filter: var(--home-card-glass-filter);
   box-shadow: var(--edge);
   overflow: hidden;
 }
@@ -2722,23 +2734,17 @@ body.chat-expanded-open {
 }
 
 .analysis-feed {
-  background: var(--surface);
+  background: var(--home-card-glass);
 }
 
 .category-console {
   border-color: color-mix(in srgb, var(--paper-0) 62%, var(--line));
-  background:
-    linear-gradient(
-      145deg,
-      color-mix(in srgb, var(--paper-0) 70%, transparent),
-      color-mix(in srgb, var(--cream-bg) 48%, transparent)
-    ),
-    color-mix(in srgb, var(--surface) 42%, transparent);
+  background: var(--home-card-glass);
   box-shadow:
     0 12px 28px -22px color-mix(in srgb, var(--paper-12) 26%, transparent),
     inset 0 1px 0 rgba(255, 255, 255, 0.82);
-  -webkit-backdrop-filter: blur(18px) saturate(0.88);
-  backdrop-filter: blur(18px) saturate(0.88);
+  -webkit-backdrop-filter: var(--home-card-glass-filter);
+  backdrop-filter: var(--home-card-glass-filter);
 }
 
 /* 标题下的一行说明：让人知道下面那些按钮是干什么用的，只说一次。 */
@@ -3194,7 +3200,9 @@ body.chat-expanded-open {
 .table-wrap {
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
-  background: var(--surface);
+  background: var(--home-card-glass);
+  -webkit-backdrop-filter: var(--home-card-glass-filter);
+  backdrop-filter: var(--home-card-glass-filter);
   box-shadow: var(--edge);
   overflow: hidden;
 }
@@ -3589,9 +3597,7 @@ body.modal-open {
   max-height: none;
   border-color: color-mix(in srgb, var(--orchid-6) 42%, transparent);
   border-radius: 20px;
-  background:
-    radial-gradient(80% 100% at 100% 0%, color-mix(in srgb, var(--orchid-6) 17%, transparent), transparent 66%),
-    var(--paper-1);
+  background: var(--canvas-atmosphere);
 }
 
 .profile-report-header {
@@ -3728,6 +3734,9 @@ body.modal-open {
 .profile-report-page {
   display: grid;
   align-content: safe center;
+  /* 每一页都铺一层与首页同源的云霞，而不是让内页露出底下的奶油纸色。
+     报告是横向翻页的，背景放在页上（而不是 shell 上）每张才都有完整构图。 */
+  background: var(--canvas-atmosphere);
 }
 
 .profile-report-page::after {
@@ -3764,17 +3773,18 @@ body.modal-open {
   line-height: 1.7;
 }
 
+/* 封面与内页同源，只多压一道斜向粉霞，让它仍然一眼认得出是封面 */
 .profile-report-cover {
   overflow: hidden;
   background:
-    radial-gradient(60% 90% at 75% 48%, color-mix(in srgb, var(--sky-6) 20%, transparent), transparent 68%),
     linear-gradient(
       110deg,
-      var(--paper-1) 0%,
-      var(--paper-1) 46%,
-      color-mix(in srgb, var(--orchid-5) 52%, transparent) 72%,
-      var(--paper-1) 100%
-    );
+      transparent 0%,
+      transparent 44%,
+      color-mix(in srgb, var(--orchid-5) 30%, transparent) 72%,
+      transparent 100%
+    ),
+    var(--canvas-atmosphere);
 }
 
 .profile-cover-image {
@@ -6464,6 +6474,9 @@ body.modal-open {
     opacity: 0.32;
   }
 
+  .panel,
+  .stat-row,
+  .table-wrap,
   .chat-head,
   .hero-chat.is-expanded .chat-head,
   .chat-foot,
@@ -6472,6 +6485,14 @@ body.modal-open {
   .message-bubble {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
+  }
+
+  .panel,
+  .stat-row,
+  .table-wrap,
+  .analysis-feed,
+  .category-console {
+    background: color-mix(in srgb, var(--surface) 94%, transparent);
   }
 
   .chat-head,
@@ -6492,6 +6513,9 @@ body.modal-open {
 }
 
 @media (prefers-contrast: more) {
+  .panel,
+  .stat-row,
+  .table-wrap,
   .chat-head,
   .hero-chat.is-expanded .chat-head,
   .chat-foot,

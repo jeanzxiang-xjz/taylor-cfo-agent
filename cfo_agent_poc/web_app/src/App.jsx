@@ -248,10 +248,12 @@ function OverviewHero() {
             <span className="hero-profile-mark" aria-hidden="true">
               <svg viewBox="0 0 48 48" focusable="false">
                 <circle cx="24" cy="24" r="18" />
-                <path d="M14 29.5c4.2-8.2 8.2-4.6 11.2-10.8 2.4-4.8 5.5-2.5 8.8-5.2" />
-                <circle cx="14" cy="29.5" r="2.2" />
-                <circle cx="25.2" cy="18.7" r="2.2" />
-                <circle cx="34" cy="13.5" r="2.2" />
+                <g transform="translate(5.76 5.76) scale(.76)" strokeWidth="1.9">
+                  <path d="M23.7 23.2c-2.5-1.5-5.8-1.1-8 1.1-1.5 1.5-2.1 3.6-1.8 5.5-1.5-.2-3.1.3-4.2 1.5-2.1 2.1-1.8 5.8.6 8.2s6.1 2.7 8.2.6c1.2-1.2 1.7-2.7 1.5-4.2 2 .3 4-.3 5.5-1.8 2.2-2.2 2.6-5.6 1.1-8Z" />
+                  <path d="m23.3 23 2-2 3.7 3.7-2 2M25.2 21.1l10.3-10.3M20.3 29.6l16.8-16.8" />
+                  <path d="m34.5 9.8 3.1-1.5 2.1 2.1-1.5 3.1M16.3 35.6l1.8 1.8" />
+                  <circle cx="18.7" cy="31.2" r="2.2" />
+                </g>
               </svg>
             </span>
             <span className="hero-profile-copy">
