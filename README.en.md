@@ -8,10 +8,11 @@
 
 **One tap after paying — your bills become a personal cash-flow system you can analyze and talk to.**
 
-A local-first personal CFO agent:<br>
-iPhone Shortcut captures a bill screenshot → local OCR & rule-based parsing on your Mac → structured SQLite ledger → web finance dashboard + LLM chat.
+A self-hosted personal CFO agent:<br>
+iPhone Shortcut captures a bill screenshot → OCR & rule-based parsing → structured SQLite ledger → web finance dashboard + LLM chat.<br>
+Run it on your own Mac (OCR stays fully offline), or deploy it to your own server for 24/7 operation.
 
-[![Platform](https://img.shields.io/badge/platform-macOS-black?logo=apple)](#-quick-start)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-black?logo=apple)](#-quick-start)
 [![Python](https://img.shields.io/badge/python-3.x-3776AB?logo=python&logoColor=white)](#-quick-start)
 [![React](https://img.shields.io/badge/react-19-61DAFB?logo=react&logoColor=black)](cfo_agent_poc/web_app)
 [![SQLite](https://img.shields.io/badge/storage-SQLite-003B57?logo=sqlite)](#-design-highlights)
@@ -49,14 +50,14 @@ The system does:        receive screenshot → OCR → parse → categorize → 
 
 | | Feature | Description |
 |---|---|---|
-| 📸 | **Near-zero-effort capture** | An iPhone Shortcut screenshots the bill page and emails it; the Mac pulls it via IMAP. No manual entry. |
-| 🔍 | **Local OCR** | macOS Vision recognizes Chinese bill screenshots — free, offline, screenshots never leave your machine. |
+| 📸 | **Near-zero-effort capture** | An iPhone Shortcut screenshots the bill page and emails it; the server pulls it via IMAP. No manual entry. |
+| 🔍 | **Pluggable OCR** | macOS Vision by default — free, offline, screenshots never leave your machine. Switches to Alibaba Cloud OCR when deployed on Linux. |
 | 🧾 | **Rule-based parsing** | Extracts amount, time, merchant, product, payment method, order ID, and infers a spending category. |
 | 🧠 | **Finance dashboard** | Today / week / month / all periods in sync: total spend, category weights, cash-flow trends, budget progress. |
 | 💬 | **A ledger you can talk to** | Powered by DeepSeek. Ask "what was my biggest expense this month?" — answers are grounded in your real ledger. |
 | 🔗 | **Traceable evidence** | Every transaction keeps its original screenshot path and full OCR text. Bad parse? Trace back, fix the rule, re-run. |
 | ♻️ | **Idempotent dedup** | A unique ID from the order number / content hash means re-syncing never double-books a transaction. |
-| 🔐 | **Local-first** | The ledger lives in a local SQLite file, no third-party finance platform involved; public access requires a passphrase. |
+| 🔐 | **You own the data** | The ledger is a single SQLite file on your own machine, no third-party finance platform involved; public access requires a passphrase. |
 
 ## 🎬 The journey of one payment
 
@@ -68,8 +69,8 @@ Follow a single transaction and you understand the whole system:
 
 1. **Pay**, then open the bill detail page in WeChat / Alipay;
 2. **Trigger the Shortcut** — it screenshots the page and emails it as an attachment (subject `CFO_CAPTURE_SCREENSHOT`);
-3. Click **"Sync"** on the web page — the Mac scans unread mail via IMAP and downloads matching screenshots;
-4. **Vision OCR** reads the screenshot; the raw text is archived under `data/ocr_texts/`;
+3. Click **"Sync"** on the web page — the server scans unread mail via IMAP and downloads matching screenshots;
+4. **OCR** reads the screenshot (system Vision on macOS, Alibaba Cloud on Linux); the raw text is archived under `data/ocr_texts/`;
 5. **Rule-based parsing** extracts amount / time / merchant / category, builds a unique transaction ID, and **upserts into SQLite**;
 6. The dashboard refreshes stats, ledger, trends, and budget progress;
 7. When you ask a question, the server injects a **trimmed ledger context** into DeepSeek and returns an answer grounded in real data.
@@ -90,10 +91,10 @@ Open [http://localhost:8091](http://localhost:8091): no login needed, 128 fictio
 
 ### Requirements (only needed for real bills)
 
-> Just browsing? Demo mode above only needs macOS + Python 3 + Node.js — no mailbox, no API key.
+> Just browsing? Demo mode above only needs Python 3 + Node.js — no mailbox, no API key.
 
-- **macOS** (OCR relies on the system Vision framework)
-- Python 3
+- **macOS**, or a **Linux server** (see "Deploying to a Linux server" below)
+- Python 3.10+
 - Node.js / npm (to build the frontend)
 - An IMAP-enabled mailbox and its authorization code (e.g. QQ Mail)
 - A [DeepSeek API key](https://platform.deepseek.com/)
@@ -190,6 +191,36 @@ curl http://127.0.0.1:8091/health
 
 </details>
 
+<details>
+<summary><b>Deploying to a Linux server (OCR switches to Alibaba Cloud)</b></summary>
+
+Apple Vision doesn't exist outside macOS, so OCR needs a different backend.
+`CFO_OCR_PROVIDER` defaults to `auto`: Vision on macOS, Alibaba Cloud OCR
+elsewhere. You can also pin it to `vision` / `aliyun`.
+
+```bash
+# Only needed for the Alibaba Cloud path; everything else is stdlib-only
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r cfo_agent_poc/requirements.txt
+```
+
+Add to `cfo_agent_poc/.env` (use a **RAM sub-account scoped to OCR only** —
+never your root AccessKey):
+
+```
+CFO_OCR_PROVIDER=aliyun
+ALIBABA_CLOUD_ACCESS_KEY_ID=...
+ALIBABA_CLOUD_ACCESS_KEY_SECRET=...
+CFO_OCR_REGION=cn-hangzhou
+```
+
+Alibaba Cloud OCR does not accept HEIC/HEIF — have the Shortcut emit PNG or JPEG.
+
+> The built frontend (`dist/`) is not in version control. Build it on your dev
+> machine and upload it, so the server never needs a Node toolchain.
+
+</details>
+
 ## 🏗️ Architecture
 
 <div align="center">
@@ -199,14 +230,14 @@ curl http://127.0.0.1:8091/health
 | Layer | Responsibility | Main components |
 |---|---|---|
 | ① Mobile capture | Screenshot the bill page and email it | iOS Shortcut |
-| ② Local processing (Mac) | Pull mail, OCR, parse & store, serve | `mail_sync.py` · `ocr_image.swift` · `bill_store.py` · `server.py` |
+| ② Server-side processing | Pull mail, OCR, parse & store, serve | `mail_sync.py` · `ocr_providers.py` · `bill_store.py` · `server.py` |
 | ③ Data & intelligence | Evidence + structured transactions, LLM chat | SQLite `cfo.sqlite` · DeepSeek |
 | ④ Presentation & access | Finance dashboard and access control | React 19 + Vite · passphrase auth |
 
 **Deliberate trade-offs:**
 
 - **Capture via "Shortcut + email" instead of a mobile app** — lowest possible cost for a personal setup, and the phone never needs to reach any HTTP endpoint; screenshots ride the mailbox ecosystem.
-- **macOS Vision instead of cloud OCR** — local, free, great at Chinese bills; screenshots never leave the machine.
+- **Pluggable OCR instead of a hard dependency on one vendor** (`ocr_providers.py`) — macOS uses system Vision by default: local, free, great at Chinese bills, screenshots never leave the machine. But Vision is Apple-only, so running 24/7 means a Linux server, where it switches to Alibaba Cloud OCR. The seam is a single `ocr_image(path) -> str`; everything downstream is unaware of which backend ran.
 - **Rule-based parsing instead of letting an LLM write to the DB** — bill layouts are stable; rules are controllable, explainable, and cost zero tokens. The LLM only handles the conversation layer.
 - **Python stdlib + SQLite backend** — a private local service doesn't need a heavy framework; a single-file database is easy to back up and query with plain SQL.
 
@@ -243,7 +274,10 @@ The server never dumps the whole database into the LLM. It builds a trimmed cont
 - Without `CFO_ACCESS_TOKEN`, public access is **refused**; with it, the page requires login and the API accepts Cookie / Bearer / custom-header auth.
 - `.env` (mail credentials, API keys) and `data/` (database, screenshots, OCR text) are excluded via `.gitignore`.
 
-> Known boundary: the chat path still sends partial transaction context to DeepSeek. For full offline operation, swap in a local LLM (see Roadmap).
+> Known boundaries:
+> - The chat path sends partial transaction context to DeepSeek. For full offline operation, swap in a local LLM (see Roadmap).
+> - **With `CFO_OCR_PROVIDER=aliyun`, bill screenshots are uploaded to Alibaba Cloud OCR** — the price of 24/7 operation on Linux. Stay on macOS with Vision and screenshots never leave your machine.
+> - On a public server, the mailbox credentials, API keys in `.env` and the entire ledger all live on that machine. Set a strong passphrase and prefer HTTPS.
 
 ## 🗺️ Roadmap
 
