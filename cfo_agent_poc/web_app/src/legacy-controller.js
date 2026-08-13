@@ -50,7 +50,7 @@ const chatAvatarAssets = {
 };
 
 // 类别色板只服务于数据编码（构成条、权重条、流水色点），不参与界面配色。
-// 同一个分类在所有视图里必须是同一个颜色，所以用 key 的稳定哈希取色。
+// 同一个分类在所有视图里必须是同一个颜色，切换周期也不能变色，所以按 key 定色。
 const CATEGORY_PALETTE = [
   "var(--cat-1)",
   "var(--cat-2)",
@@ -61,9 +61,52 @@ const CATEGORY_PALETTE = [
   "var(--cat-7)",
 ];
 
+// 取色顺序，不是随便排的：构成条只画金额最高的 6 类，所以把「通常占比靠前」的
+// 分类排在最前面，它们就必然落在不同色槽上。
+//
+// 这里原先用 key 的哈希取色，26 个分类砸进 7 个槽，分布还极不均匀——
+// 实测账本里 top6 只拿到 3 个颜色（外卖和数字服务同色，演出票务、网购、
+// 通信充值三个同色）。哈希的「稳定」只保证同一分类不变色，
+// 完全不保证同屏的几个分类不撞色。
+const CATEGORY_COLOR_ORDER = [
+  "food_delivery",
+  "entertainment",
+  "ecommerce",
+  "digital_services",
+  "car_charging",
+  "telecom",
+  "groceries",
+  "books",
+  "parking",
+  "utilities",
+  "lottery",
+  "personal_transfer",
+  "leisure_travel",
+  "coffee_tea",
+  "fruit",
+  "education",
+  "healthcare",
+  "general_shopping",
+  "transport",
+  "bakery",
+  "property",
+  "stationery",
+  "auto",
+  "credit_repayment",
+  "investment",
+];
+
+const CATEGORY_COLOR_INDEX = new Map(CATEGORY_COLOR_ORDER.map((key, index) => [key, index]));
+
 function categoryColor(key) {
   const value = String(key || "uncategorized");
+  // 「未分类」和「其他」共用中性灰：它们是兜底桶，不该抢真实分类的颜色。
   if (value === "uncategorized") return "var(--cat-8)";
+
+  const index = CATEGORY_COLOR_INDEX.get(value);
+  if (index !== undefined) return CATEGORY_PALETTE[index % CATEGORY_PALETTE.length];
+
+  // 新分类还没进上面的顺序表时的兜底，保证至少是稳定的。
   let hash = 0;
   for (let i = 0; i < value.length; i += 1) {
     hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
