@@ -42,6 +42,7 @@ def build_payload() -> dict:
         if "classification_reason" in columns
         else "null as classification_reason"
     )
+    reviewed_at = "reviewed_at" if "reviewed_at" in columns else "null as reviewed_at"
     rows = conn.execute(
         f"""
         select
@@ -64,7 +65,8 @@ def build_payload() -> dict:
             {classification_source},
             {classification_confidence},
             {classification_status},
-            {classification_reason}
+            {classification_reason},
+            {reviewed_at}
         from transactions
         where paid_at is not null
         order by paid_at desc

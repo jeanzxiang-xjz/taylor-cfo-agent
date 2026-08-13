@@ -200,5 +200,73 @@ class TransactionEditTests(unittest.TestCase):
         self.assertEqual(replayed.paid_at, "2026-07-12T10:20:30")
 
 
+class ReviewClearsUnsureFlagTests(TransactionEditTests):
+    """人工核对过的交易不该继续挂在「待核实」。
+
+    前端的判定是三选一：classification_status=pending、confidence<0.6、
+    或分类来源偏弱。原先只有「改动了 category」才会写分类元数据，
+    而 confidence 从不重算，于是出现两条清不掉的死路：
+      A. 因 confidence 低被标记 —— 改什么都没用；
+      B. 因分类弱被标记，但只改了商户/金额 —— 分类元数据没被触碰。
+    再加上「解析本来就对、只想确认一下」根本无处记录。
+    reviewed_at 就是为这三种情况兜底的。
+    """
+
+    def set_unsure(self, **columns: object) -> None:
+        assignments = ", ".join(f"{name} = ?" for name in columns)
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                f"update transactions set {assignments} where transaction_uid = ?",
+                (*columns.values(), self.uid),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def test_editing_an_unrelated_field_still_marks_the_row_reviewed(self) -> None:
+        """失败路径 B：因分类弱被标记，用户只改了商户。"""
+        self.set_unsure(classification_source="local_industry", classification_status="pending")
+
+        result = server.update_transaction_fields(self.uid, {"merchant": "示例便利店（河西店）"})
+
+        self.assertEqual(result["saved_fields"], ["merchant"])
+        self.assertIsNotNone(self.row()["reviewed_at"])
+
+    def test_low_parse_confidence_row_can_be_cleared(self) -> None:
+        """失败路径 A：confidence 低是清不掉的死路，因为它不可编辑也从不重算。"""
+        self.set_unsure(confidence=0.35)
+
+        server.update_transaction_fields(self.uid, {"thing": "饭"})
+
+        row = self.row()
+        self.assertIsNotNone(row["reviewed_at"])
+        self.assertAlmostEqual(row["confidence"], 0.35, msg="解析置信是机器指标，不该被人工校正篡改")
+
+    def test_saving_without_changes_counts_as_a_review(self) -> None:
+        """交互死角 C：解析本来就对，用户只想说「看过了，没问题」。"""
+        self.set_unsure(confidence=0.4)
+        before = self.row()
+
+        result = server.update_transaction_fields(self.uid, {"merchant": before["merchant"]})
+
+        self.assertEqual(result["saved_fields"], [], "没改动就不该记成校正")
+        self.assertEqual(self.overrides(), {}, "没改动就不该留 override")
+        self.assertIsNotNone(self.row()["reviewed_at"], "但必须记下「已核对」")
+
+    def test_review_timestamp_reaches_the_frontend_payload(self) -> None:
+        """前端靠 data.json 里的 reviewed_at 过滤，取不到就等于没修。"""
+        server.update_transaction_fields(self.uid, {"thing": "饭"})
+
+        # build_payload 来自 generate_snapshot，它持有自己的 DB_PATH，
+        # patch server.DB_PATH 影响不到它。
+        import generate_snapshot
+
+        with patch.object(generate_snapshot, "DB_PATH", self.db_path):
+            payload = server.build_payload()
+        entry = next(tx for tx in payload["transactions"] if tx["transaction_uid"] == self.uid)
+        self.assertIsNotNone(entry["reviewed_at"])
+
+
 if __name__ == "__main__":
     unittest.main()

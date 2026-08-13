@@ -1786,13 +1786,23 @@ def update_transaction_fields(transaction_uid: str, fields: dict) -> dict:
         # 只记录真正被改动的字段。表单每次都会把 8 个字段整份提交，
         # 全部当成「人工校正」会让「已校正」标记失去意义。
         changed = {name: value for name, value in cleaned.items() if not _same_field(value, row[name])}
+        reviewed_at = datetime.now().isoformat(timespec="seconds")
+
+        # 打开证据面板对着截图按了保存，本身就是一次人工核对——哪怕一个字都没改。
+        # 解析置信低不等于解析错了，「看过，没问题」必须能让这笔不再挂在待核实。
         if not changed:
+            conn.execute(
+                "update transactions set reviewed_at = ? where transaction_uid = ?",
+                (reviewed_at, transaction_uid),
+            )
+            conn.commit()
             evidence = transaction_evidence(transaction_uid)
             evidence["saved_fields"] = []
             evidence["persisted"] = bool(capture_hash)
             return evidence
 
         assignments = dict(changed)
+        assignments["reviewed_at"] = reviewed_at
         # 只有分类被改动时才动分类元数据，改个金额不该把分类来源写成人工。
         if "category" in changed:
             assignments.update({
