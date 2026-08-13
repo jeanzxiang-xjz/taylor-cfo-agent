@@ -2218,12 +2218,15 @@ function buildDecisionCandidates() {
   // deepseek_low 是模型低分命中，local_industry 是靠行业词猜的，
   // unresolved 是重试到上限也没结论。这些都比「识别中」强，但值得人扫一眼。
   const WEAK_CLASSIFICATION = new Set(["deepseek_low", "local_industry", "unresolved"]);
+  // 人工在证据面板核对过就不再提示：解析置信低只说明机器没把握，
+  // 人对着截图确认过之后，这笔的不确定性就已经消掉了。
   const unsure = selected
     .filter(
       (tx) =>
-        tx.classification_status === "pending" ||
-        Number(tx.confidence || 0) < 0.6 ||
-        WEAK_CLASSIFICATION.has(tx.classification_source),
+        !tx.reviewed_at &&
+        (tx.classification_status === "pending" ||
+          Number(tx.confidence || 0) < 0.6 ||
+          WEAK_CLASSIFICATION.has(tx.classification_source)),
     )
     .sort((a, b) => positiveSpend(b) - positiveSpend(a));
   if (unsure.length) {
