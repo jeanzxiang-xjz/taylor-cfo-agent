@@ -105,6 +105,30 @@ function TopRail() {
           <button className="period-btn" data-period="all" type="button" role="radio" aria-checked="false" tabIndex={-1}>
             全部
           </button>
+          <button
+            id="customPeriodBtn"
+            className="period-btn is-custom"
+            data-period="custom"
+            type="button"
+            role="radio"
+            aria-checked="false"
+            aria-haspopup="dialog"
+            aria-expanded="false"
+            tabIndex={-1}
+          >
+            <svg className="period-btn-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <rect x="2.3" y="3.5" width="11.4" height="10.2" rx="2" />
+              <path d="M2.3 6.7h11.4M5.7 2.3v2.4M10.3 2.3v2.4" />
+            </svg>
+            <span className="period-btn-label" id="customPeriodLabel">
+              自定义
+            </span>
+          </button>
+          <button id="periodClear" className="period-clear" type="button" aria-label="清除自定义区间，回到预设周期" hidden>
+            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <path d="M5 5l6 6M11 5l-6 6" />
+            </svg>
+          </button>
         </div>
 
         <div className="rail-actions">
@@ -314,22 +338,124 @@ function OverviewHero() {
         </div>
 
         <div className="chat-foot">
-          <div className="quick-prompts" aria-label="快捷提问">
-            <button data-prompt-key="spend" data-question="我今天花了多少钱？" type="button">
-              今日支出
-            </button>
-            <button data-prompt-key="largest" data-question="今天最大的支出是什么？" type="button">
-              最大支出
-            </button>
-            <button data-prompt-key="analysis" data-question="分析下我今天的消费情况" type="button">
-              消费分析
-            </button>
-            <button data-prompt-key="takeout" data-question="我今天外卖点得多吗？" type="button">
-              外卖频率
-            </button>
-            <button data-prompt-key="budget" data-question="今日预算使用率是多少？" type="button">
-              预算状态
-            </button>
+          {/* 三类问题共用一条轨道：分段切换在左、当前这一类的胶囊在中、该类专属动作在右。
+              对话面板纵向空间紧张（.hero-chat 是定高 grid，这里多一像素就从消息区扣一像素），
+              所以三类不并排、不换行——任何视口下都恒定一行，窄屏由轨道自己横向滚。 */}
+          <div className="prompt-rail">
+            <div className="prompt-tabs" role="tablist" aria-label="快捷提问分类">
+              <button
+                id="promptTabGuess"
+                className="prompt-tab is-guess"
+                type="button"
+                role="tab"
+                data-prompt-tab="guess"
+                aria-selected="true"
+                aria-controls="promptTrackGuess"
+              >
+                <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+                  <path d="M6 1.4 10.3 6 6 10.6 1.7 6Z" />
+                </svg>
+                <span className="prompt-tab-text">猜你想问</span>
+              </button>
+              <button
+                id="promptTabPreset"
+                className="prompt-tab"
+                type="button"
+                role="tab"
+                data-prompt-tab="preset"
+                aria-selected="false"
+                aria-controls="promptTrackPreset"
+                tabIndex={-1}
+              >
+                <span className="prompt-tab-text">常用</span>
+              </button>
+              <button
+                id="promptTabMine"
+                className="prompt-tab"
+                type="button"
+                role="tab"
+                data-prompt-tab="mine"
+                aria-selected="false"
+                aria-controls="promptTrackMine"
+                tabIndex={-1}
+              >
+                <span className="prompt-tab-text">我的</span>
+              </button>
+            </div>
+
+            {/* 这个类名不能改：updateQuickPrompts 与 setChatBusy 都靠 .quick-prompts button
+                找胶囊。分段与右侧动作刻意留在它外面，这样生成回答时胶囊置灰、切类和管理仍可用。 */}
+            <div className="quick-prompts">
+              <div
+                id="promptTrackGuess"
+                className="prompt-track"
+                data-track="guess"
+                role="tabpanel"
+                aria-labelledby="promptTabGuess"
+                aria-live="polite"
+              >
+                <span className="visually-hidden">这些问题按你当前选中的时段，从你的账本里挑出来</span>
+                <span id="aiPromptList" className="ai-list" />
+              </div>
+
+              <div
+                id="promptTrackPreset"
+                className="prompt-track"
+                data-track="preset"
+                role="tabpanel"
+                aria-labelledby="promptTabPreset"
+                hidden
+              >
+                <button data-prompt-key="spend" data-question="我今天花了多少钱？" type="button">
+                  今日支出
+                </button>
+                <button data-prompt-key="largest" data-question="今天最大的支出是什么？" type="button">
+                  最大支出
+                </button>
+                <button data-prompt-key="analysis" data-question="分析下我今天的消费情况" type="button">
+                  消费分析
+                </button>
+                <button data-prompt-key="takeout" data-question="我今天外卖点得多吗？" type="button">
+                  外卖频率
+                </button>
+                <button data-prompt-key="budget" data-question="今日预算使用率是多少？" type="button">
+                  预算状态
+                </button>
+              </div>
+
+              <div
+                id="promptTrackMine"
+                className="prompt-track"
+                data-track="mine"
+                role="tabpanel"
+                aria-labelledby="promptTabMine"
+                aria-live="polite"
+                hidden
+              />
+            </div>
+
+            <div className="prompt-rail-action">
+              <button id="rerollPrompts" className="rail-icon-button" type="button" aria-label="换一批问题" title="换一批">
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                  <path d="M13.4 7.1A5.5 5.5 0 0 0 3.6 4.7" />
+                  <path d="M2.6 8.9a5.5 5.5 0 0 0 9.8 2.4" />
+                  <path d="M13.7 2.8v3.7h-3.7M2.3 13.2V9.5H6" />
+                </svg>
+              </button>
+              <button
+                id="managePrompts"
+                className="rail-icon-button"
+                type="button"
+                data-open-modal="promptModal"
+                aria-label="管理我的常问"
+                title="管理我的常问"
+                hidden
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                  <path d="M8 2.4v11.2M2.4 8h11.2" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           <form id="chatForm" className="chat-form" noValidate>
@@ -449,6 +575,8 @@ function LedgerPanel() {
         </div>
       </header>
 
+      <div id="correctionQueue" className="correction-queue" aria-live="polite" hidden />
+
       <div id="filterBar" className="filter-bar" aria-label="分类筛选" />
 
       <div className="table-wrap">
@@ -525,7 +653,25 @@ function TrendModal() {
           <div className="trend-chart-panel">
             <div id="trendChart" className="trend-chart" />
             <div id="trendTooltip" className="trend-tooltip" role="status" hidden />
-            <ul id="trendBreakdown" className="trend-breakdown" aria-label="逐期明细，点选可高亮对应柱子" />
+            {/*
+              跳转箭头是这块唯一「点了会离开弹窗」的控件，光靠一个图标说不清楚。
+              在列表头一次性讲明白两个动作分别通向哪里，省得每张卡都重复一遍。
+              整块 aria-hidden：同样的信息屏幕阅读器已经能从下面 ul 的 aria-label
+              和每个按钮自己的 aria-label 里拿到，读两遍反而啰嗦。
+            */}
+            <div className="trend-breakdown-head" aria-hidden="true">
+              <span className="micro-label">逐期明细</span>
+              <span className="trend-breakdown-hint">
+                点卡片高亮柱子 · 点
+                <span className="trend-hint-chip">
+                  <svg viewBox="0 0 16 16" focusable="false">
+                    <path d="M6 3.5 10.5 8 6 12.5" />
+                  </svg>
+                </span>
+                看当期交易
+              </span>
+            </div>
+            <ul id="trendBreakdown" className="trend-breakdown" aria-label="逐期明细，点卡片高亮对应柱子，点箭头查看该期交易" />
           </div>
 
           <aside className="trend-budget-panel" id="trendBudgetPanel" aria-label="预算状态">
@@ -595,6 +741,18 @@ function SyncModal() {
         </div>
 
         <div className="sync-body">
+          <aside className="sync-guidance" aria-labelledby="syncGuidanceTitle">
+            <span className="sync-guidance-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M6.5 4.5h11v15h-11zM9 8h6M9 11.5h6M9 15h3.5" />
+              </svg>
+            </span>
+            <div>
+              <strong id="syncGuidanceTitle">同步时，请先打开账单详情页</strong>
+              <p>确认金额、交易时间和商户完整显示后，再触发快捷指令。</p>
+            </div>
+          </aside>
+
           <div className="sync-state-card" id="syncStateCard">
             <span id="syncStatusLabel">准备同步</span>
             <strong id="syncStatusTitle">等待开始</strong>
@@ -617,6 +775,10 @@ function SyncModal() {
             <div>
               <span className="micro-label">新增交易</span>
               <strong id="syncNewCount">--</strong>
+            </div>
+            <div>
+              <span className="micro-label">待订正</span>
+              <strong id="syncCorrectionCount">--</strong>
             </div>
           </div>
 
@@ -700,6 +862,59 @@ function BudgetModal() {
   );
 }
 
+function RangePickerModal() {
+  return (
+    <div id="rangeModal" className="modal-backdrop" hidden>
+      <section className="modal-shell range-modal" role="dialog" aria-modal="true" aria-labelledby="rangeTitle">
+        <div className="modal-header">
+          <div>
+            <h2 id="rangeTitle">选择时间区间</h2>
+            <p>选定后，首屏数字、关键观察、支出去向、账本与提问都按这段时间重算。</p>
+          </div>
+          <button className="modal-close" type="button" data-modal-close="rangeModal" aria-label="关闭时间区间选择">
+            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <path d="M4.4 4.4 11.6 11.6M11.6 4.4 4.4 11.6" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="range-body">
+          <div className="range-presets" id="rangePresets" role="group" aria-label="快捷区间" />
+
+          <div className="range-calendar">
+            <div className="range-calendar-head">
+              <button id="rangePrevMonth" className="range-nav" type="button" aria-label="上一个月">
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                  <path d="M10 3.2 5.2 8l4.8 4.8" />
+                </svg>
+              </button>
+              <div className="range-month-titles" id="rangeMonthTitles" aria-live="polite" />
+              <button id="rangeNextMonth" className="range-nav" type="button" aria-label="下一个月">
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                  <path d="M6 3.2 10.8 8 6 12.8" />
+                </svg>
+              </button>
+            </div>
+            <div className="range-months" id="rangeMonths" />
+          </div>
+        </div>
+
+        <div className="range-footer">
+          <p className="range-summary" id="rangeSummary" aria-live="polite" />
+          <div className="range-actions">
+            <button id="rangeCancel" className="btn btn-quiet" type="button">
+              取消
+            </button>
+            <button id="rangeApply" className="btn btn-primary" type="button">
+              应用区间
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function EvidenceDrawer() {
   return (
     <div id="evidenceDrawer" className="drawer-backdrop" hidden>
@@ -720,6 +935,69 @@ function EvidenceDrawer() {
           <div className="evidence-loading">正在读取本地证据…</div>
         </div>
       </aside>
+    </div>
+  );
+}
+
+function CategoryManagementModal() {
+  return (
+    <div id="categoryModal" className="modal-backdrop category-backdrop" hidden>
+      <section className="modal-shell category-modal" role="dialog" aria-modal="true" aria-labelledby="categoryModalTitle" tabIndex={-1}>
+        <header className="category-modal-header">
+          <button className="category-mobile-back" type="button" data-category-back aria-label="返回分类列表">
+            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M10.5 3.5 6 8l4.5 4.5" /></svg>
+          </button>
+          <div className="category-modal-heading">
+            <h2 id="categoryModalTitle">分类管理</h2>
+            <p id="categoryModalMeta">正在读取分类目录</p>
+          </div>
+          <div className="category-modal-actions">
+            <button id="newCategoryButton" className="btn btn-primary btn-sm" type="button">
+              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 3v10M3 8h10" /></svg>
+              新建分类
+            </button>
+            <button className="modal-close" type="button" data-modal-close="categoryModal" aria-label="关闭分类管理">
+              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                <path d="M4.4 4.4 11.6 11.6M11.6 4.4 4.4 11.6" />
+              </svg>
+            </button>
+          </div>
+        </header>
+
+        <div id="categoryDemoNotice" className="category-demo-notice" hidden>
+          演示模式下可以查看分类目录，但不能新增、编辑、排序或停用。
+        </div>
+
+        <div className="category-workspace">
+          <div className="category-list-pane" id="categoryListPane">
+            <div id="categoryList" className="category-list" aria-label="分类列表" />
+          </div>
+          <div className="category-editor-pane" id="categoryEditorPane">
+            <div id="categoryEditor" className="category-editor" aria-live="polite" />
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function CustomPromptModal() {
+  return (
+    <div id="promptModal" className="modal-backdrop prompt-backdrop" hidden>
+      <section className="modal-shell prompt-modal" role="dialog" aria-modal="true" aria-labelledby="promptModalTitle" tabIndex={-1}>
+        <header className="modal-header">
+          <div className="prompt-modal-heading">
+            <h2 id="promptModalTitle">我的常问</h2>
+            <p id="promptModalMeta">正在读取</p>
+          </div>
+          <button className="modal-close" type="button" data-modal-close="promptModal" aria-label="关闭我的常问">
+            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <path d="M4.4 4.4 11.6 11.6M11.6 4.4 4.4 11.6" />
+            </svg>
+          </button>
+        </header>
+        <div id="promptManager" className="prompt-manager" />
+      </section>
     </div>
   );
 }
@@ -796,6 +1074,9 @@ export default function App() {
         <TrendModal />
         <SyncModal />
         <BudgetModal />
+        <RangePickerModal />
+        <CategoryManagementModal />
+        <CustomPromptModal />
         <ProfileReportModal />
         <EvidenceDrawer />
         <div id="chatExpandBackdrop" className="chat-expand-backdrop" hidden aria-hidden="true" />

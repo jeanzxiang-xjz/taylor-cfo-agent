@@ -11,9 +11,11 @@ from typing import Callable
 try:
     from cfo_agent_poc.bill_classifier import FIXED_TAXONOMY
     from cfo_agent_poc.bill_store import ensure_bill_tables, remember_merchant_classification
+    from cfo_agent_poc.category_catalog import ensure_category_tables, model_taxonomy
 except ModuleNotFoundError:  # Supports direct execution from cfo_agent_poc.
     from bill_classifier import FIXED_TAXONOMY
     from bill_store import ensure_bill_tables, remember_merchant_classification
+    from category_catalog import ensure_category_tables, model_taxonomy
 
 
 ALLOWED_INPUT_FIELDS = ("merchant", "product", "platform", "payment_app")
@@ -30,7 +32,7 @@ LOW_CONFIDENCE_FLOOR = 0.45  # 采信但标记存疑，交给「待核实」复�
 MAX_ATTEMPTS = 3           # 试满就落「未分类」，终态
 
 
-def build_deepseek_request(items: list[dict], *, model: str) -> dict:
+def build_deepseek_request(items: list[dict], *, model: str, taxonomy: dict[str, str] | None = None) -> dict:
     safe_items = [
         {
             "item_id": index,
@@ -38,7 +40,7 @@ def build_deepseek_request(items: list[dict], *, model: str) -> dict:
         }
         for index, item in enumerate(items)
     ]
-    taxonomy = {key: FIXED_TAXONOMY[key] for key in MODEL_CATEGORIES}
+    resolved_taxonomy = taxonomy or {key: FIXED_TAXONOMY[key] for key in MODEL_CATEGORIES}
     system_prompt = (
         "你是私人账本的消费分类器。只能根据给定商户、商品、平台和支付应用分类；"
         "不得推断或修改金额、时间、交易号等事实。必须返回 JSON 对象，格式为 "
@@ -51,7 +53,7 @@ def build_deepseek_request(items: list[dict], *, model: str) -> dict:
             {"role": "system", "content": system_prompt},
             {
                 "role": "user",
-                "content": json.dumps({"taxonomy": taxonomy, "items": safe_items}, ensure_ascii=False),
+                "content": json.dumps({"taxonomy": resolved_taxonomy, "items": safe_items}, ensure_ascii=False),
             },
         ],
         "temperature": 0,
@@ -70,7 +72,10 @@ def _json_content(value: str) -> dict:
     return parsed
 
 
-def parse_deepseek_response(response: dict, *, item_count: int) -> list[dict]:
+def parse_deepseek_response(
+    response: dict, *, item_count: int, taxonomy: dict[str, str] | None = None
+) -> list[dict]:
+    resolved_taxonomy = taxonomy or {key: FIXED_TAXONOMY[key] for key in MODEL_CATEGORIES}
     try:
         content = response["choices"][0]["message"]["content"]
         payload = _json_content(content)
@@ -90,9 +95,9 @@ def parse_deepseek_response(response: dict, *, item_count: int) -> list[dict]:
             continue
         if not isinstance(item_id, int) or item_id in seen_ids or not 0 <= item_id < item_count:
             continue
-        if category not in MODEL_CATEGORIES or not 0 <= confidence <= 1:
+        if category not in resolved_taxonomy or not 0 <= confidence <= 1:
             continue
-        thing = str(item.get("thing") or FIXED_TAXONOMY[category]).strip()[:40]
+        thing = str(item.get("thing") or resolved_taxonomy[category]).strip()[:40]
         reason = str(item.get("reason") or "DeepSeek 分类").strip()[:80]
         results.append({
             "item_id": item_id,
@@ -112,8 +117,9 @@ def request_deepseek_classifications(
     base_url: str,
     model: str,
     timeout: float,
+    taxonomy: dict[str, str] | None = None,
 ) -> list[dict]:
-    body = json.dumps(build_deepseek_request(items, model=model), ensure_ascii=False).encode("utf-8")
+    body = json.dumps(build_deepseek_request(items, model=model, taxonomy=taxonomy), ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
         f"{base_url.rstrip('/')}/chat/completions",
         data=body,
@@ -122,7 +128,7 @@ def request_deepseek_classifications(
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         payload = json.loads(response.read().decode("utf-8"))
-    return parse_deepseek_response(payload, item_count=len(items))
+    return parse_deepseek_response(payload, item_count=len(items), taxonomy=taxonomy)
 
 
 def settle_transactions(conn: sqlite3.Connection, uids: list[str], *, reason: str) -> int:
@@ -166,6 +172,8 @@ def settle_stuck_transactions(db_path: str | Path, *, max_attempts: int = MAX_AT
     conn = sqlite3.connect(Path(db_path))
     conn.row_factory = sqlite3.Row
     ensure_bill_tables(conn)
+    ensure_category_tables(conn)
+    conn.commit()
     settled = settle_exhausted_transactions(conn, max_attempts=max_attempts)
     conn.commit()
     conn.close()
@@ -185,6 +193,9 @@ def enrich_pending_transactions(
     conn = sqlite3.connect(Path(db_path))
     conn.row_factory = sqlite3.Row
     ensure_bill_tables(conn)
+    ensure_category_tables(conn)
+    conn.commit()
+    active_taxonomy = model_taxonomy(db_path)
     # 每轮开头先收尸：把试满次数还没结论的行落成终态，
     # 这样即使 worker 中途崩了，界面也不会一直停在「识别中」。
     swept = settle_exhausted_transactions(conn)
@@ -238,6 +249,7 @@ def enrich_pending_transactions(
                 base_url=base_url or os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
                 model=model or os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash"),
                 timeout=timeout or float(os.environ.get("CFO_CLASSIFICATION_TIMEOUT_SECONDS", "12")),
+                taxonomy=active_taxonomy,
             )
 
     try:
@@ -261,6 +273,8 @@ def enrich_pending_transactions(
 
     resolved = 0
     for result in classifications:
+        if result.get("category") not in active_taxonomy:
+            continue
         confidence = float(result.get("confidence", 0))
         if confidence < LOW_CONFIDENCE_FLOOR:
             # 模型自己都没把握到这个程度，不如留给下一轮/兜底，别写进账本
