@@ -32,8 +32,12 @@ class IncompleteTransactionTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.root = Path(self.temp_dir.name)
         self.db_path = self.root / "cfo.sqlite"
+        # 项目根要一起指到临时目录：凭证图片的存法（可能被改写成相对项目根的
+        # 可移植路径）和服务端删文件时的解法必须落在同一个根上，否则删不到。
         self.patches = [
             patch.object(bill_store, "APP_DB", self.db_path),
+            patch.object(bill_store, "PROJECT_DIR", self.root),
+            patch.object(bill_store, "DATA_DIR", self.root / "data"),
             patch.object(server, "DB_PATH", self.db_path),
             patch.object(server, "ROOT_DIR", self.root),
             patch.object(server, "DEMO_MODE", False),
