@@ -79,6 +79,7 @@ def build_payload(db_path: Path | str | None = None) -> dict:
         else "null as classification_reason"
     )
     parse_warnings = "parse_warnings" if "parse_warnings" in columns else "'[]' as parse_warnings"
+    reviewed_at = "reviewed_at" if "reviewed_at" in columns else "null as reviewed_at"
     rows = conn.execute(
         f"""
         select
@@ -103,6 +104,7 @@ def build_payload(db_path: Path | str | None = None) -> dict:
             {classification_status},
             {classification_reason},
             {parse_warnings},
+            {reviewed_at},
             t.created_at,
             c.captured_at
         from transactions t
