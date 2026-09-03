@@ -12,14 +12,50 @@ DB_PATH = Path(os.environ.get("CFO_DB_PATH") or ROOT / "data" / "cfo.sqlite")
 DEMO_MODE = os.environ.get("CFO_DEMO") == "1"
 OUT_PATH = Path(__file__).resolve().parent / "data.json"
 
+CORE_CORRECTION_FIELDS = ("amount", "paid_at", "merchant")
+
+
+def correction_fields(record: dict) -> list[str]:
+    """Return the core facts that still need a human correction."""
+    missing: list[str] = []
+    try:
+        amount = float(record.get("amount") or 0)
+    except (TypeError, ValueError):
+        amount = 0
+    if amount <= 0:
+        missing.append("amount")
+
+    paid_at = record.get("paid_at")
+    try:
+        if not paid_at:
+            raise ValueError
+        datetime.fromisoformat(str(paid_at))
+    except ValueError:
+        missing.append("paid_at")
+
+    if not str(record.get("merchant") or "").strip():
+        missing.append("merchant")
+    return missing
+
+
+def _parse_warnings(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    try:
+        parsed = json.loads(str(value or "[]"))
+    except json.JSONDecodeError:
+        return [str(value)] if value else []
+    return [str(item) for item in parsed] if isinstance(parsed, list) else []
+
 
 def is_demo_database() -> bool:
     """本地免登录验证模式不等于当前读取的是演示数据库。"""
     return DEMO_MODE and DB_PATH.name == "cfo-demo.sqlite"
 
 
-def build_payload() -> dict:
-    conn = sqlite3.connect(DB_PATH)
+def build_payload(db_path: Path | str | None = None) -> dict:
+    selected_db = Path(db_path) if db_path is not None else DB_PATH
+    conn = sqlite3.connect(selected_db)
     conn.row_factory = sqlite3.Row
     columns = {row[1] for row in conn.execute("pragma table_info(transactions)")}
     classification_source = (
@@ -42,6 +78,7 @@ def build_payload() -> dict:
         if "classification_reason" in columns
         else "null as classification_reason"
     )
+    parse_warnings = "parse_warnings" if "parse_warnings" in columns else "'[]' as parse_warnings"
     rows = conn.execute(
         f"""
         select
@@ -64,21 +101,33 @@ def build_payload() -> dict:
             {classification_source},
             {classification_confidence},
             {classification_status},
-            {classification_reason}
-        from transactions
-        where paid_at is not null
-        order by paid_at desc
+            {classification_reason},
+            {parse_warnings},
+            t.created_at,
+            c.captured_at
+        from transactions t
+        left join raw_bill_captures c on c.capture_hash = t.raw_capture_hash
+        order by coalesce(t.paid_at, c.captured_at, t.created_at) desc, t.transaction_uid desc
         """
     ).fetchall()
     conn.close()
 
+    transactions = []
+    for row in rows:
+        record = dict(row)
+        record["parse_warnings"] = _parse_warnings(record.get("parse_warnings"))
+        record["correction_fields"] = correction_fields(record)
+        record["analysis_eligible"] = not record["correction_fields"]
+        transactions.append(record)
+
     return {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
-        "demo": is_demo_database(),
+        "demo": DEMO_MODE and selected_db.name == "cfo-demo.sqlite",
         "classification_pending_count": sum(
-            1 for row in rows if row["classification_status"] == "pending"
+            1 for row in transactions if row["classification_status"] == "pending"
         ),
-        "transactions": [dict(row) for row in rows],
+        "correction_pending_count": sum(1 for row in transactions if not row["analysis_eligible"]),
+        "transactions": transactions,
     }
 
 
