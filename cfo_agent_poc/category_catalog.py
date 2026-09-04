@@ -13,37 +13,41 @@ ALLOWED_ICON_KEYS = (
     "train", "heart", "home", "phone", "ticket", "wallet", "drop",
     "pencil", "screen", "plane", "gift", "transfer", "circle",
 )
-ALLOWED_COLOR_TOKENS = tuple(f"cat-{index}" for index in range(1, 9))
+# 色板取 styles.css 的 --cat-1~26，与 legacy-controller 的 CATEGORY_COLORS 同一套。
+ALLOWED_COLOR_TOKENS = tuple(f"cat-{index}" for index in range(1, 27))
 
 # The immutable ids and system names are classification semantics. display_name is
 # the user-facing layer and is only used to seed a new catalog.
+#
+# 每条的 color_token 与 legacy-controller 的 CATEGORY_COLORS 一一对应：catalog 里
+# 存了颜色就以 catalog 为准，这里对不上的话同屏会出现两个分类一个色。
 DEFAULT_CATEGORIES = (
     ("coffee_tea", "咖啡茶饮", "咖啡/奶茶", "cup", "cat-1"),
-    ("food_delivery", "餐饮外卖", "外卖/餐饮", "meal", "cat-2"),
-    ("parking", "停车缴费", "停车交通", "car", "cat-3"),
+    ("food_delivery", "餐饮外卖", "外卖/餐饮", "meal", "cat-5"),
+    ("parking", "停车缴费", "停车交通", "car", "cat-7"),
     ("car_charging", "车辆充电", "车辆充电", "bolt", "cat-4"),
-    ("auto", "爱车养车", "爱车养车", "car", "cat-5"),
-    ("groceries", "超市便利", "超市便利", "bag", "cat-6"),
-    ("fruit", "水果", "水果鲜果", "fruit", "cat-7"),
-    ("bakery", "烘焙", "烘焙面包", "meal", "cat-1"),
-    ("education", "证券考试", "教育考试", "book", "cat-2"),
-    ("books", "图书", "图书书店", "book", "cat-3"),
-    ("ecommerce", "网购", "网购", "cart", "cat-4"),
-    ("transport", "交通出行", "交通", "train", "cat-5"),
-    ("healthcare", "医疗", "医疗", "heart", "cat-6"),
-    ("investment", "理财", "投资理财", "wallet", "cat-7"),
-    ("property", "物业服务", "物业生活", "home", "cat-1"),
-    ("telecom", "通信充值", "通信充值", "phone", "cat-2"),
-    ("entertainment", "演出票务", "演出票务", "ticket", "cat-3"),
-    ("credit_repayment", "信用借还", "信用借还", "wallet", "cat-4"),
-    ("utilities", "水电燃缴费", "水电燃缴费", "drop", "cat-5"),
-    ("stationery", "文具用品", "文具用品", "pencil", "cat-6"),
-    ("digital_services", "数字服务", "数字服务", "screen", "cat-7"),
-    ("general_shopping", "日常购物", "日常购物", "bag", "cat-1"),
-    ("leisure_travel", "休闲旅行", "旅行休闲", "plane", "cat-2"),
-    ("lottery", "彩票", "彩票", "gift", "cat-3"),
-    ("personal_transfer", "个人转账", "个人转账", "transfer", "cat-4"),
-    ("uncategorized", "未分类", "未分类", "circle", "cat-8"),
+    ("auto", "爱车养车", "爱车养车", "car", "cat-25"),
+    ("groceries", "超市便利", "超市便利", "bag", "cat-18"),
+    ("fruit", "水果", "水果鲜果", "fruit", "cat-12"),
+    ("bakery", "烘焙", "烘焙面包", "meal", "cat-9"),
+    ("education", "证券考试", "教育考试", "book", "cat-13"),
+    ("books", "图书", "图书书店", "book", "cat-2"),
+    ("ecommerce", "网购", "网购", "cart", "cat-6"),
+    ("transport", "交通出行", "交通", "train", "cat-3"),
+    ("healthcare", "医疗", "医疗", "heart", "cat-19"),
+    ("investment", "理财", "投资理财", "wallet", "cat-11"),
+    ("property", "物业服务", "物业生活", "home", "cat-10"),
+    ("telecom", "通信充值", "通信充值", "phone", "cat-24"),
+    ("entertainment", "演出票务", "演出票务", "ticket", "cat-22"),
+    ("credit_repayment", "信用借还", "信用借还", "wallet", "cat-23"),
+    ("utilities", "水电燃缴费", "水电燃缴费", "drop", "cat-20"),
+    ("stationery", "文具用品", "文具用品", "pencil", "cat-21"),
+    ("digital_services", "数字服务", "数字服务", "screen", "cat-16"),
+    ("general_shopping", "日常购物", "日常购物", "bag", "cat-17"),
+    ("leisure_travel", "休闲旅行", "旅行休闲", "plane", "cat-14"),
+    ("lottery", "彩票", "彩票", "gift", "cat-15"),
+    ("personal_transfer", "个人转账", "个人转账", "transfer", "cat-8"),
+    ("uncategorized", "未分类", "未分类", "circle", "cat-26"),
 )
 
 DEFAULT_PRIMARY_IDS = ("books", "food_delivery", "groceries", "property", "car_charging")

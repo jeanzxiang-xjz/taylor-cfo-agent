@@ -1126,7 +1126,7 @@ body.is-scrolled .rail {
 }
 
 .period-clear:hover {
-  background: var(--ink-4);
+  background: var(--paper-4);
   color: var(--text-strong);
 }
 
@@ -2508,20 +2508,20 @@ body.chat-expanded-open {
   box-shadow: var(--edge);
 }
 
-/* 「猜你想问」是唯一带智能感的一档，用玉色菱形标出来；另外两档保持中性。 */
+/* 「猜你想问」是唯一带智能感的一档，用兰紫菱形标出来；另外两档保持中性。 */
 .prompt-tab.is-guess svg {
   width: 9px;
   height: 9px;
-  fill: var(--jade-6);
+  fill: var(--orchid-6);
   transition: fill var(--dur-2) var(--ease-out);
 }
 
 .prompt-tab.is-guess.is-active {
-  color: var(--jade-9);
+  color: var(--orchid-9);
 }
 
 .prompt-tab.is-guess.is-active svg {
-  fill: var(--jade-7);
+  fill: var(--orchid-7);
 }
 
 /* 轨道：一次只显示一档。横向滚动抄 .filter-strip-scroll 那套，
@@ -2558,7 +2558,7 @@ body.chat-expanded-open {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  color: var(--jade-9);
+  color: var(--orchid-9);
   font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -2574,7 +2574,7 @@ body.chat-expanded-open {
 /*
  * 跟随时段的常问：标签前挂一枚当前时段的前缀，切顶栏时它会跟着改。
  * 不用换颜色或换形状来区分两类——「有没有那截时间」本身就是最准的区分，
- * 而且顺带说清了这一枚点下去问的是哪一段。玉色是「猜你想问」那一档的，不外借。
+ * 而且顺带说清了这一枚点下去问的是哪一段。兰紫是「猜你想问」那一档的，不外借。
  */
 .prompt-track[data-track="mine"] button {
   display: inline-flex;
@@ -2602,9 +2602,9 @@ body.chat-expanded-open {
 }
 
 .quick-prompts .prompt-ghost:hover:not([disabled]) {
-  border-color: var(--jade-7);
-  color: var(--jade-9);
-  background: var(--jade-bg);
+  border-color: var(--orchid-7);
+  color: var(--orchid-9);
+  background: var(--orchid-bg);
 }
 
 /* 右侧动作槽刻意留在 .quick-prompts 外面：生成回答时胶囊置灰，
@@ -2650,7 +2650,7 @@ body.chat-expanded-open {
 
 .rail-icon-button:hover:not([disabled]) {
   background: var(--chat-surface);
-  color: var(--jade-9);
+  color: var(--orchid-9);
 }
 
 /* 转一格，把「又换了一批」这件事说出来 */
@@ -2675,9 +2675,9 @@ body.chat-expanded-open {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border-color: var(--jade-6);
-  background: rgba(56, 170, 131, 0.16);
-  color: var(--jade-9);
+  border-color: var(--orchid-6);
+  background: color-mix(in srgb, var(--orchid-6) 16%, transparent);
+  color: var(--orchid-9);
   font-weight: 600;
 }
 
@@ -2686,13 +2686,13 @@ body.chat-expanded-open {
   width: 4px;
   height: 4px;
   border-radius: var(--r-full);
-  background: var(--jade-7);
-  box-shadow: 0 0 0 3px rgba(46, 158, 123, 0.18);
+  background: var(--orchid-7);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--orchid-7) 18%, transparent);
 }
 
 .ai-list button:hover {
-  border-color: var(--jade-8);
-  background: rgba(76, 158, 132, 0.3);
+  border-color: var(--orchid-8);
+  background: color-mix(in srgb, var(--orchid-6) 30%, transparent);
 }
 
 /* 补上一直缺的禁用态：setChatBusy 会把所有 chip 置灰，但之前没有视觉反馈 */
@@ -2708,9 +2708,9 @@ body.chat-expanded-open {
 }
 
 .ai-list button[disabled]:hover {
-  border-color: var(--jade-6);
-  background: rgba(56, 170, 131, 0.16);
-  color: var(--jade-9);
+  border-color: var(--orchid-6);
+  background: color-mix(in srgb, var(--orchid-6) 16%, transparent);
+  color: var(--orchid-9);
 }
 
 /*
@@ -3603,7 +3603,7 @@ body.chat-expanded-open {
   margin: var(--sp-4) calc(var(--sp-5) * -1) calc(var(--sp-5) * -1);
   padding: var(--sp-3) var(--sp-5);
   border-top: 1px solid var(--line);
-  background: var(--ink-1);
+  background: var(--paper-1);
 }
 
 .filter-popover-manage button {
@@ -3611,14 +3611,14 @@ body.chat-expanded-open {
   align-items: center;
   gap: var(--sp-2);
   min-height: 32px;
-  color: var(--ink-10);
+  color: var(--paper-10);
   font-size: var(--fs-xs);
   font-weight: 600;
   transition: color var(--dur-2) var(--ease-out);
 }
 
 .filter-popover-manage button:hover {
-  color: var(--jade-9);
+  color: var(--orchid-9);
 }
 
 .filter-popover-manage svg {
@@ -3630,12 +3630,17 @@ body.chat-expanded-open {
   stroke-linecap: round;
 }
 
-/* — 待订正：独立于时间筛选，保证任何截图都不会悄悄消失 — */
+/* — 待订正：独立于时间筛选，保证任何截图都不会悄悄消失 —
+   它和 .table-wrap 一样直接坐在云霞底上，所以用同一层玻璃，只是把琥珀调进
+   底色里——描边仍是实的琥珀，警示强度不能被材质稀释掉。 */
 .correction-queue {
   margin-bottom: var(--sp-5);
   border: 1px solid var(--amber-6);
   border-radius: var(--r-lg);
-  background: color-mix(in srgb, var(--amber-bg) 82%, var(--ink-1));
+  background: color-mix(in srgb, var(--amber-bg) 62%, var(--home-card-glass));
+  -webkit-backdrop-filter: var(--home-card-glass-filter);
+  backdrop-filter: var(--home-card-glass-filter);
+  box-shadow: var(--edge);
   overflow: hidden;
 }
 
@@ -3659,7 +3664,7 @@ body.chat-expanded-open {
   flex: none;
   place-items: center;
   border-radius: var(--r-sm);
-  background: rgba(240, 187, 109, 0.12);
+  background: color-mix(in srgb, var(--amber-6) 14%, transparent);
   color: var(--amber-8);
 }
 
@@ -3715,7 +3720,7 @@ body.chat-expanded-open {
 }
 
 .correction-item:hover {
-  background: rgba(240, 187, 109, 0.08);
+  background: color-mix(in srgb, var(--amber-6) 10%, transparent);
 }
 
 .correction-item:focus-visible {
@@ -4225,7 +4230,7 @@ body.modal-open {
   padding: 0 var(--sp-3);
   border: 1px solid var(--line);
   border-radius: var(--r-full);
-  background: var(--ink-3);
+  background: var(--paper-3);
   color: var(--muted);
   font-size: var(--type-label);
   white-space: nowrap;
@@ -4237,14 +4242,14 @@ body.modal-open {
 
 .range-preset:hover {
   border-color: var(--line-strong);
-  background: var(--ink-4);
+  background: var(--paper-4);
   color: var(--text);
 }
 
 .range-preset.active {
   border-color: transparent;
-  background: var(--ink-11);
-  color: var(--ink-0);
+  background: var(--paper-11);
+  color: var(--paper-0);
   font-weight: 500;
 }
 
@@ -4278,7 +4283,7 @@ body.modal-open {
   flex: none;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
-  background: var(--ink-3);
+  background: var(--paper-3);
   color: var(--muted);
   transition:
     color var(--dur-2) var(--ease-out),
@@ -4298,7 +4303,7 @@ body.modal-open {
 
 .range-nav:hover:not([disabled]) {
   border-color: var(--line-strong);
-  background: var(--ink-4);
+  background: var(--paper-4);
   color: var(--text-strong);
 }
 
@@ -4340,7 +4345,7 @@ body.modal-open {
   min-height: 34px;
   padding-bottom: 5px;
   border-radius: var(--r-sm);
-  color: var(--ink-10);
+  color: var(--paper-10);
   font-family: var(--font-data);
   font-size: var(--type-label);
   font-variant-numeric: tabular-nums;
@@ -4360,24 +4365,24 @@ body.modal-open {
 }
 
 .range-day:hover:not([disabled]):not(.is-outside) {
-  background: var(--ink-4);
+  background: var(--paper-4);
   color: var(--text-strong);
 }
 
 .range-day.is-today {
-  color: var(--jade-8);
+  color: var(--orchid-8);
   font-weight: 600;
 }
 
 .range-day.is-in-range {
   border-radius: 0;
-  background: var(--jade-bg);
-  color: var(--jade-9);
+  background: var(--orchid-bg);
+  color: var(--orchid-9);
 }
 
 /* 只点了起点、鼠标还在划的时候，带子先淡一档，区别于已经定下的选区 */
 .range-day.is-in-range.is-preview {
-  background: color-mix(in srgb, var(--jade-bg) 55%, transparent);
+  background: color-mix(in srgb, var(--orchid-bg) 55%, transparent);
 }
 
 .range-day.is-in-range.is-start {
@@ -4394,8 +4399,8 @@ body.modal-open {
 
 .range-day.is-start,
 .range-day.is-end {
-  background: var(--jade-8);
-  color: var(--ink-0);
+  background: var(--orchid-8);
+  color: var(--paper-0);
   font-weight: 600;
 }
 
@@ -4407,16 +4412,16 @@ body.modal-open {
   width: 3px;
   height: 3px;
   border-radius: 50%;
-  background: var(--jade-6);
+  background: var(--orchid-6);
 }
 
 .range-day.is-in-range.has-data::after {
-  background: var(--jade-7);
+  background: var(--orchid-7);
 }
 
 .range-day.is-start.has-data::after,
 .range-day.is-end.has-data::after {
-  background: var(--ink-0);
+  background: var(--paper-0);
 }
 
 .range-footer {
@@ -4473,7 +4478,7 @@ body.modal-open {
   width: min(1120px, 100%);
   height: min(82dvh, 760px);
   min-height: 620px;
-  background: var(--ink-2);
+  background: var(--paper-2);
 }
 
 .category-modal-header {
@@ -4548,7 +4553,7 @@ body.modal-open {
 
 .category-list-pane {
   border-right: 1px solid var(--line);
-  background: var(--ink-1);
+  background: var(--paper-1);
 }
 
 .category-list {
@@ -4601,11 +4606,11 @@ body.modal-open {
 
 .category-list-row:hover,
 .category-list-row.is-selected {
-  background: var(--ink-3);
+  background: var(--paper-3);
 }
 
 .category-list-row.is-selected {
-  box-shadow: inset 0 0 0 1px var(--jade-line);
+  box-shadow: inset 0 0 0 1px var(--orchid-line);
 }
 
 .category-list-row.is-disabled {
@@ -4628,7 +4633,7 @@ body.modal-open {
   display: grid;
   place-items: center;
   border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--category-color) 15%, var(--ink-2));
+  background: color-mix(in srgb, var(--category-color) 15%, var(--paper-2));
   color: var(--category-color);
 }
 
@@ -4701,7 +4706,7 @@ body.modal-open {
 }
 
 .category-row-order button:hover {
-  background: var(--ink-4);
+  background: var(--paper-4);
   color: var(--text);
 }
 
@@ -4712,7 +4717,7 @@ body.modal-open {
 }
 
 .category-editor-pane {
-  background: var(--ink-2);
+  background: var(--paper-2);
 }
 
 .category-editor {
@@ -4778,7 +4783,7 @@ body.modal-open {
 }
 
 .category-save-status {
-  color: var(--jade-9);
+  color: var(--orchid-9);
   font-size: var(--fs-xs);
 }
 
@@ -4795,7 +4800,7 @@ body.modal-open {
 .category-fieldset legend {
   display: block;
   margin-bottom: var(--sp-2);
-  color: var(--ink-10);
+  color: var(--paper-10);
   font-size: var(--fs-xs);
   font-weight: 600;
 }
@@ -4806,7 +4811,7 @@ body.modal-open {
   padding: 0 var(--sp-3);
   border: 1px solid var(--line);
   border-radius: var(--r-md);
-  background: var(--ink-1);
+  background: var(--paper-1);
   color: var(--text-strong);
   font: 500 var(--fs-sm) var(--font-ui);
 }
@@ -4855,7 +4860,7 @@ body.modal-open {
   place-items: center;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
-  background: var(--ink-1);
+  background: var(--paper-1);
   color: var(--muted);
   cursor: pointer;
   transition: border-color var(--dur-2), color var(--dur-2), background var(--dur-2), transform var(--dur-1);
@@ -4871,10 +4876,10 @@ body.modal-open {
 
 .category-icon-options input:checked + span,
 .category-color-options input:checked + span {
-  border-color: var(--jade-7);
-  background: var(--jade-bg);
-  color: var(--jade-9);
-  box-shadow: inset 0 0 0 1px var(--jade-7);
+  border-color: var(--orchid-7);
+  background: var(--orchid-bg);
+  color: var(--orchid-9);
+  box-shadow: inset 0 0 0 1px var(--orchid-7);
 }
 
 .category-icon-options input:focus-visible + span,
@@ -4914,7 +4919,7 @@ body.modal-open {
   display: block;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-full);
-  background: var(--ink-1);
+  background: var(--paper-1);
   cursor: pointer;
   transition: background var(--dur-2), border-color var(--dur-2);
 }
@@ -4932,12 +4937,12 @@ body.modal-open {
 }
 
 .category-switch input:checked + span {
-  border-color: var(--jade-7);
-  background: var(--jade-bg);
+  border-color: var(--orchid-7);
+  background: var(--orchid-bg);
 }
 
 .category-switch input:checked + span::after {
-  background: var(--jade-8);
+  background: var(--orchid-8);
   transform: translateX(18px);
 }
 
@@ -4967,7 +4972,7 @@ body.modal-open {
 }
 
 .category-danger-zone strong {
-  color: var(--ink-10);
+  color: var(--paper-10);
   font-size: var(--fs-xs);
   font-weight: 600;
 }
@@ -4985,7 +4990,7 @@ body.modal-open {
   padding: var(--sp-5);
   border: 1px solid var(--line-strong);
   border-radius: var(--r-lg);
-  background: var(--ink-1);
+  background: var(--paper-1);
   box-shadow: var(--shadow-3);
 }
 
@@ -5044,7 +5049,7 @@ body.modal-open {
   padding: var(--sp-3) var(--sp-4);
   border: 1px solid var(--line);
   border-radius: var(--r-md);
-  background: var(--ink-3);
+  background: var(--paper-3);
   color: var(--muted);
   font-size: var(--fs-sm);
 }
@@ -5080,7 +5085,7 @@ body.modal-open {
 
 /* 正在编辑的那条：整行染色，不加第二种描边 */
 .prompt-row.is-editing {
-  background: var(--jade-bg);
+  background: var(--orchid-bg);
 }
 
 .prompt-row.is-editing + .prompt-row,
@@ -5108,7 +5113,7 @@ body.modal-open {
 .prompt-row-flag {
   padding: 1px 6px;
   border-radius: var(--r-full);
-  background: var(--ink-4);
+  background: var(--paper-4);
   color: var(--muted);
   font-size: var(--fs-micro);
   font-style: normal;
@@ -5152,7 +5157,7 @@ body.modal-open {
 }
 
 .prompt-row-actions button:hover:not([disabled]) {
-  background: var(--ink-4);
+  background: var(--paper-4);
   color: var(--text-strong);
 }
 
@@ -5199,7 +5204,7 @@ body.modal-open {
   margin: var(--sp-5) calc(var(--sp-6) * -1) calc(var(--sp-6) * -1);
   padding: var(--sp-5) var(--sp-6) var(--sp-6);
   border-top: 1px solid var(--line);
-  background: var(--ink-1);
+  background: var(--paper-1);
 }
 
 .prompt-form h3 {
@@ -5231,13 +5236,13 @@ body.modal-open {
   padding: 0 10px;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
-  background: var(--ink-0);
+  background: var(--paper-0);
   color: var(--text-strong);
   font-size: var(--fs-sm);
 }
 
 .prompt-form input[type="text"]:focus-visible {
-  border-color: var(--jade-6);
+  border-color: var(--orchid-6);
   outline: none;
   box-shadow: var(--focus);
 }
@@ -5265,21 +5270,21 @@ body.modal-open {
 .prompt-check input {
   width: 14px;
   height: 14px;
-  accent-color: var(--jade-6);
+  accent-color: var(--orchid-6);
 }
 
 /* 预览把「跟随时段」这层机制显性化：勾上之后到底会发出哪一句。 */
 .prompt-preview {
   padding: 9px 11px;
   border-radius: var(--r-sm);
-  background: var(--ink-3);
+  background: var(--paper-3);
   color: var(--muted);
   font-size: var(--fs-xs);
   line-height: 1.5;
 }
 
 .prompt-preview em {
-  color: var(--jade-9);
+  color: var(--orchid-9);
   font-style: normal;
 }
 
@@ -5297,7 +5302,7 @@ body.modal-open {
 }
 
 .prompt-save-status.is-success {
-  color: var(--jade-8);
+  color: var(--orchid-8);
 }
 
 .prompt-save-status.is-pending {
@@ -6934,7 +6939,7 @@ body.modal-open {
   margin: 0 4px;
   border: 1px solid var(--line);
   border-radius: var(--r-full);
-  background: var(--ink-3);
+  background: var(--paper-3);
 }
 
 .trend-hint-chip svg {
@@ -7000,7 +7005,7 @@ body.modal-open {
 /* 箭头常驻。它是这块唯一通往账本的路，藏在 hover 里等于不存在——
    不把鼠标放上去的人永远不知道能跳，触屏上更是压根够不着。
    静止态压到 --ink-7：看得出是个控件，又不和金额抢注意力；
-   悬停 / 选中时底下那颗药丸亮成翡翠色，说明按下去会发生事情。 */
+   悬停 / 选中时底下那颗药丸亮成兰紫色，说明按下去会发生事情。 */
 .trend-cell-jump {
   position: relative;
   display: grid;
@@ -7010,7 +7015,7 @@ body.modal-open {
   border: 0;
   border-radius: 0 var(--r-sm) var(--r-sm) 0;
   background: none;
-  color: var(--ink-7);
+  color: var(--paper-7);
   cursor: pointer;
   transition: color var(--dur-2) var(--ease-out);
 }
@@ -7046,19 +7051,19 @@ body.modal-open {
 .trend-cell:hover .trend-cell-jump,
 .trend-cell.is-selected .trend-cell-jump,
 .trend-cell-jump:focus-visible {
-  color: var(--jade-9);
+  color: var(--orchid-9);
 }
 
 .trend-cell:hover .trend-cell-jump::before,
 .trend-cell.is-selected .trend-cell-jump::before,
 .trend-cell-jump:focus-visible::before {
-  background: var(--jade-bg);
-  border-color: var(--jade-line);
+  background: var(--orchid-bg);
+  border-color: var(--orchid-line);
 }
 
 /* 指针正压在箭头上时再亮一档，和「只是悬停整张卡」区分开 */
 .trend-cell-jump:hover::before {
-  background: var(--jade-line);
+  background: var(--orchid-line);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -7077,11 +7082,11 @@ body.modal-open {
   content: none;
 }
 
-/* 触屏没有 hover，翡翠药丸永远不会浮出来，静止态就得自带一层中性底衬，
+/* 触屏没有 hover，兰紫药丸永远不会浮出来，静止态就得自带一层中性底衬，
    否则一个裸箭头读不出可点。 */
 @media (hover: none) {
   .trend-cell-jump:not(.is-void)::before {
-    background: var(--ink-3);
+    background: var(--paper-3);
     border-color: var(--line);
   }
 }
@@ -7367,7 +7372,7 @@ body.modal-open {
   height: 32px;
   place-items: center;
   border-radius: var(--r-sm);
-  background: rgba(240, 187, 109, 0.12);
+  background: color-mix(in srgb, var(--amber-6) 14%, transparent);
   color: var(--amber-8);
 }
 
@@ -7519,16 +7524,16 @@ body.modal-open {
 }
 
 .sync-item:hover:not(:disabled) {
-  background: var(--ink-3);
+  background: var(--paper-3);
 }
 
 .sync-item:focus-visible {
   outline: 0;
-  box-shadow: inset 0 0 0 2px var(--jade-7);
+  box-shadow: inset 0 0 0 2px var(--orchid-7);
 }
 
 .sync-item.needs-correction {
-  background: color-mix(in srgb, var(--amber-bg) 78%, var(--ink-1));
+  background: color-mix(in srgb, var(--amber-bg) 78%, var(--paper-1));
 }
 
 .sync-item.needs-correction .sync-item-category {
@@ -8607,7 +8612,7 @@ body.modal-open {
   }
 
   .category-editor-pane {
-    background: var(--ink-2);
+    background: var(--paper-2);
     transform: translateX(100%);
     visibility: hidden;
   }
