@@ -163,6 +163,9 @@ let state = {
   promptRailScope: null,
   // 「换一批」「切档」这类用户主动换内容的一次性标记，用完即清。
   promptRailPulse: false,
+  // 排序动效进行中：期间不重画分类列表，否则正在滑动的行会被换成新节点。
+  categoryReorderAnimating: false,
+  categoryReorderTimer: null,
   customPrompts: [],
   customPromptLimit: 12,
   // 管理弹窗里正在编辑的那条 id；null 表示表单处于「新建」状态。
@@ -2197,9 +2200,28 @@ function setCategoryStatus(message = "", kind = "success") {
   }
 }
 
-function renderCategoryRow(item, { primary = false } = {}) {
+/*
+ * 排序箭头是「动作」，不是「分类」。原来借 categoryIcon("transfer") 那枚双向箭头，
+ * 再靠 CSS 旋转 ±90° 凑方向——旋转一个双向符号得到的还是双向符号，两枚长得一模一样，
+ * 每次都得先猜哪个是上、哪个是下。这里给它单独的单向箭头，和「我的常问」那组同款，
+ * 全站的排序控件说同一种话。
+ */
+const ORDER_ARROWS = {
+  up: '<path d="M8 12.5v-9M4.5 7 8 3.5 11.5 7" />',
+  down: '<path d="M8 3.5v9M4.5 9 8 12.5 11.5 9" />',
+};
+
+function orderArrow(direction) {
+  return `<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">${ORDER_ARROWS[direction]}</svg>`;
+}
+
+function renderCategoryRow(item, { primary = false, index = 0, total = 1 } = {}) {
   const selected = state.categorySelectedId === item.id && !state.categoryDraftNew;
   const readonly = state.demo ? " disabled" : "";
+  // 头尾的那一端本来就没得可去。先禁用再说，而不是让人点一下才发现没反应；
+  // 一亮一灰摆在一起，顺带也把「哪个是上、哪个是下」讲清楚了。
+  const noUp = readonly || index === 0 ? " disabled" : "";
+  const noDown = readonly || index === total - 1 ? " disabled" : "";
   return `
     <div class="category-list-row${selected ? " is-selected" : ""}${item.is_enabled ? "" : " is-disabled"}" data-category-row="${escapeHtml(item.id)}"${primary && !state.demo ? ' draggable="true"' : ""}>
       <button class="category-row-main" type="button" data-category-select="${escapeHtml(item.id)}" aria-pressed="${selected}">
@@ -2212,12 +2234,65 @@ function renderCategoryRow(item, { primary = false } = {}) {
       </button>
       ${primary ? `
         <div class="category-row-order" aria-label="调整${escapeHtml(item.display_name)}顺序">
-          <button type="button" data-category-move="up" data-category-id="${escapeHtml(item.id)}" aria-label="上移${escapeHtml(item.display_name)}"${readonly}>${categoryIcon("transfer")}</button>
-          <button type="button" data-category-move="down" data-category-id="${escapeHtml(item.id)}" aria-label="下移${escapeHtml(item.display_name)}"${readonly}>${categoryIcon("transfer")}</button>
+          <button type="button" data-category-move="up" data-category-id="${escapeHtml(item.id)}" aria-label="把${escapeHtml(item.display_name)}上移一位"${noUp}>${orderArrow("up")}</button>
+          <button type="button" data-category-move="down" data-category-id="${escapeHtml(item.id)}" aria-label="把${escapeHtml(item.display_name)}下移一位"${noDown}>${orderArrow("down")}</button>
         </div>
       ` : ""}
     </div>
   `;
+}
+
+const CATEGORY_REORDER_MS = 260;
+
+/*
+ * 换位动效用 FLIP：重画之前记下每行的位置，重画之后把它们按位移量先倒推回原处，
+ * 再放着过渡到 0——两行于是擦身而过，而不是「啪」地互换。列表是整段重画的，
+ * 没有别的办法把新旧节点接上。
+ */
+function captureCategoryRowTops() {
+  const tops = new Map();
+  document.querySelectorAll("#categoryList [data-category-row]").forEach((row) => {
+    tops.set(row.dataset.categoryRow, row.getBoundingClientRect().top);
+  });
+  return tops;
+}
+
+function playCategoryReorder(previousTops) {
+  if (prefersReducedMotion() || !previousTops?.size) return;
+  const rows = [...document.querySelectorAll("#categoryList [data-category-row]")];
+  const shifted = [];
+  rows.forEach((row) => {
+    const before = previousTops.get(row.dataset.categoryRow);
+    if (before === undefined) return;
+    const delta = before - row.getBoundingClientRect().top;
+    if (!delta) return;
+    row.style.transition = "none";
+    row.style.transform = `translateY(${delta}px)`;
+    shifted.push(row);
+  });
+  if (!shifted.length) return;
+
+  state.categoryReorderAnimating = true;
+  /*
+   * 必须在这里强制一次回流。倒推和归零如果落在同一帧，浏览器只看到「值没变」，
+   * 过渡根本不会启动——行直接就位，等于没做动效。用 rAF 也救不了：rAF 回调仍在
+   * 同一帧的样式计算之前。
+   */
+  void document.getElementById("categoryList")?.offsetHeight;
+  shifted.forEach((row) => {
+    row.style.transition = `transform ${CATEGORY_REORDER_MS}ms var(--ease-out)`;
+    row.style.transform = "";
+  });
+  window.clearTimeout(state.categoryReorderTimer);
+  state.categoryReorderTimer = window.setTimeout(() => {
+    state.categoryReorderAnimating = false;
+    shifted.forEach((row) => {
+      row.style.transition = "";
+      row.style.transform = "";
+    });
+    // 动效期间跳过的那次重画在这里补上：保存失败回滚过顺序的话，以这次为准。
+    renderCategoryList();
+  }, CATEGORY_REORDER_MS + 60);
 }
 
 function renderCategoryList() {
@@ -2227,7 +2302,9 @@ function renderCategoryList() {
   const section = (title, items, options = {}) => `
     <section class="category-list-section">
       <div class="category-list-title"><h3>${title}</h3><span>${items.length}</span></div>
-      ${items.length ? items.map((item) => renderCategoryRow(item, options)).join("") : `<p class="category-list-empty">这里还没有分类</p>`}
+      ${items.length
+        ? items.map((item, index) => renderCategoryRow(item, { ...options, index, total: items.length })).join("")
+        : `<p class="category-list-empty">这里还没有分类</p>`}
     </section>
   `;
   $("categoryList").innerHTML = `
@@ -2358,7 +2435,8 @@ function renderCategoryManager() {
   $("categoryModalMeta").textContent = `常用 ${primaryCount}/${state.categoryPrimaryLimit} · 启用 ${enabledCount} 类`;
   $("categoryDemoNotice").hidden = !state.demo;
   $("newCategoryButton").hidden = Boolean(state.demo);
-  renderCategoryList();
+  // 正在滑动时重画会把行换成新节点，动画断在半路，看着还是瞬间跳位。
+  if (!state.categoryReorderAnimating) renderCategoryList();
   renderCategoryEditor();
 }
 
@@ -4700,10 +4778,18 @@ function transactionDayMap() {
 }
 
 /** 草稿态可能只点了起点，或者终点在起点之前，这里统一成规规矩矩的闭区间。 */
-function normalizedDraft() {
+/*
+ * 两份草稿必须分开：
+ * - committed（默认）是「点出来」的那份，按下应用落地的就是它；
+ * - preview 才把悬停那天算进去，只用来画日历和给个预读数。
+ * 混成一份的后果是预览会变成应用值：预览一消失（手指移开、指针离开网格），
+ * 按下去的区间就缩回起点那一天。
+ */
+function normalizedDraft({ preview = false } = {}) {
   const draft = state.rangeDraft;
   if (!draft?.start) return null;
-  const end = draft.end || (state.rangeHoverKey ? dateFromKey(state.rangeHoverKey) : draft.start);
+  const hovered = preview && state.rangeHoverKey ? dateFromKey(state.rangeHoverKey) : null;
+  const end = draft.end || hovered || draft.start;
   return end < draft.start ? { start: end, end: draft.start } : { start: draft.start, end };
 }
 
@@ -4770,7 +4856,7 @@ function renderRangeMonths() {
 
 /** 选区只改 class，不重建网格——鼠标划过预览时才不会闪。 */
 function paintRangeSelection() {
-  const draft = normalizedDraft();
+  const draft = normalizedDraft({ preview: true });
   const cells = Array.from(document.querySelectorAll("#rangeMonths [data-range-day]"));
   if (!draft) {
     // 取消选中之后得把上一次的高亮抹掉，否则日历上还留着一段「选中的样子」。
@@ -4811,7 +4897,8 @@ function paintRangeSelection() {
 function renderRangeSummary() {
   const node = $("rangeSummary");
   const apply = $("rangeApply");
-  const draft = normalizedDraft();
+  const committed = normalizedDraft();
+  const draft = normalizedDraft({ preview: true });
   if (!node) return;
 
   if (!draft) {
@@ -4826,20 +4913,24 @@ function renderRangeSummary() {
     return;
   }
 
-  const singleDay = sameDay(draft.start, draft.end);
   const bounds = { start: draft.start, end: addDays(draft.end, 1) };
   const transactions = transactionsBetween(bounds.start, bounds.end);
   const days = Math.max(1, Math.round((bounds.end - bounds.start) / 86400000));
 
+  // 按钮说的是 committed：悬停预览再长，按下去也只会落地已经点出来的那段。
   if (apply) {
+    const committedDays = Math.max(
+      1,
+      Math.round((addDays(committed.end, 1) - committed.start) / 86400000),
+    );
     apply.disabled = false;
-    apply.textContent = singleDay ? "只应用这一天" : `应用这 ${days} 天`;
+    apply.textContent = committedDays === 1 ? "只应用这一天" : `应用这 ${committedDays} 天`;
   }
 
-  if (!state.rangeDraft.end && !state.rangeHoverKey) {
+  if (!state.rangeDraft.end) {
     node.innerHTML = `
       <b>${escapeHtml(customRangeLabel(draft))}</b>
-      <span>还差终点：再点一天，或者按「只应用这一天」。</span>
+      <span>${state.rangeHoverKey ? `预览 ${days} 天 · 再点一下定终点` : "还差终点：再点一天，或者按「只应用这一天」。"}</span>
     `;
     return;
   }
@@ -5152,9 +5243,15 @@ function wireInteractions() {
       const next = [...previous];
       [next[index], next[target]] = [next[target], next[index]];
       state.categories.forEach((item) => { if (next.includes(item.id)) item.primary_order = next.indexOf(item.id); });
+      const tops = captureCategoryRowTops();
       renderCategoryList();
+      playCategoryReorder(tops);
       await savePrimaryOrder(next, previous);
-      document.querySelector(`[data-category-id="${CSS.escape(move.dataset.categoryId)}"][data-category-move="${move.dataset.categoryMove}"]`)?.focus();
+      // 移到头之后同方向那枚会变禁用，焦点不能就这么掉在地上，交给反方向那枚。
+      const moved = (direction) =>
+        document.querySelector(`[data-category-id="${CSS.escape(move.dataset.categoryId)}"][data-category-move="${direction}"]`);
+      const same = moved(move.dataset.categoryMove);
+      (same && !same.disabled ? same : moved(move.dataset.categoryMove === "up" ? "down" : "up"))?.focus();
       return;
     }
     if (event.target.closest("[data-category-toggle-enabled]")) {
@@ -5520,22 +5617,29 @@ function wireInteractions() {
     if (cell && !cell.disabled) pickRangeDay(cell.dataset.rangeDay);
   });
 
-  // 只点了起点时，划过哪天就预览到哪天。
-  rangeMonths.addEventListener("mouseover", (event) => {
-    if (state.rangeDraft?.end) return;
-    const cell = event.target.closest("[data-range-day]");
-    if (!cell || cell.disabled || state.rangeHoverKey === cell.dataset.rangeDay) return;
-    state.rangeHoverKey = cell.dataset.rangeDay;
-    paintRangeSelection();
-    renderRangeSummary();
-  });
+  /*
+   * 只点了起点时，划过哪天就预览到哪天——但这套只接给真有指针的设备。
+   * 触摸屏上 iOS 会在点按时先发 mouseover：第二下的 click 一旦被吞掉，
+   * 草稿里其实还没有终点，小结却已经被这条预览撑成了一整段；等手指移向「应用」，
+   * 网格的 mouseleave 把预览清掉，按下去落地的就只剩起点那一天。
+   */
+  if (window.matchMedia?.("(hover: hover)").matches) {
+    rangeMonths.addEventListener("mouseover", (event) => {
+      if (state.rangeDraft?.end) return;
+      const cell = event.target.closest("[data-range-day]");
+      if (!cell || cell.disabled || state.rangeHoverKey === cell.dataset.rangeDay) return;
+      state.rangeHoverKey = cell.dataset.rangeDay;
+      paintRangeSelection();
+      renderRangeSummary();
+    });
 
-  rangeMonths.addEventListener("mouseleave", () => {
-    if (!state.rangeHoverKey) return;
-    state.rangeHoverKey = null;
-    paintRangeSelection();
-    renderRangeSummary();
-  });
+    rangeMonths.addEventListener("mouseleave", () => {
+      if (!state.rangeHoverKey) return;
+      state.rangeHoverKey = null;
+      paintRangeSelection();
+      renderRangeSummary();
+    });
+  }
 
   rangeMonths.addEventListener("keydown", handleRangeGridKeydown);
 

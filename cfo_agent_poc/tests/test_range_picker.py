@@ -48,17 +48,40 @@ class RangePickerContractTests(unittest.TestCase):
 
     def test_empty_draft_clears_the_calendar_and_blocks_apply(self) -> None:
         # 取消之后日历上不能留着上一次的高亮，「应用」也不该还能按下去。
-        paint = self.source[self.source.index("function paintRangeSelection(") :][:800]
+        paint = self.source[self.source.index("function paintRangeSelection(") :][:900]
         self.assertIn('cell.classList.remove("is-in-range"', paint)
-        summary = self.source[self.source.index("function renderRangeSummary(") :][:1400]
+        summary = self.source[self.source.index("function renderRangeSummary(") :][:1800]
         self.assertIn("apply.disabled = true", summary)
+
+    def test_hover_preview_is_wired_only_for_real_pointers(self) -> None:
+        """触摸屏上这条预览会变成一个谎。
+
+        iOS 点按时先发 mouseover：第二下的 click 一旦被 :hover 吞掉，草稿里其实还没有
+        终点，小结却已经被预览撑成一整段（截图上就是「5 天 · 7 笔」）；手指移向「应用」
+        时网格 mouseleave 把预览清掉，按下去落地的只剩起点那一天。
+        """
+        source = self.source
+        handler = source[source.index('rangeMonths.addEventListener("mouseover"') - 400 :][:600]
+        self.assertIn('window.matchMedia?.("(hover: hover)").matches', handler)
+
+    def test_preview_never_becomes_the_applied_value(self) -> None:
+        # 悬停那天只进预览草稿；按下应用落地的永远是点出来的那份。
+        draft = self.source[self.source.index("function normalizedDraft(") :][:600]
+        self.assertIn("function normalizedDraft({ preview = false } = {})", draft)
+        self.assertIn("preview && state.rangeHoverKey", draft)
+        paint = self.source[self.source.index("function paintRangeSelection(") :][:200]
+        self.assertIn("normalizedDraft({ preview: true })", paint)
+        # 应用按钮读的是 committed，不是预览
+        summary = self.source[self.source.index("function renderRangeSummary(") :][:1800]
+        self.assertIn("const committed = normalizedDraft();", summary)
+        self.assertIn("committedDays", summary)
 
     def test_apply_button_states_the_actual_span(self) -> None:
         # 只点了起点时按钮必须直说「只应用这一天」——原来它永远写「应用」，
         # 第二下没点上也照样静默生效成一天。
-        summary = self.source[self.source.index("function renderRangeSummary(") :][:1400]
+        summary = self.source[self.source.index("function renderRangeSummary(") :][:1800]
         self.assertIn("只应用这一天", summary)
-        self.assertIsNotNone(re.search(r"应用这 \$\{days\} 天", summary))
+        self.assertIsNotNone(re.search(r"应用这 \$\{committedDays\} 天", summary))
 
 
 if __name__ == "__main__":
