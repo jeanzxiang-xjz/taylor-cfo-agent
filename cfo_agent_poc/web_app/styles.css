@@ -2075,6 +2075,33 @@ body.chat-expanded-open {
   line-height: var(--leading-reading);
 }
 
+/*
+ * 消息到场。轨道就在消息区正下方，所以新消息从下方升起——点了哪枚胶囊，
+ * 那句话就从那个方向进来。回答气泡稍晚一档，两条不要同时冒出来。
+ * 「重置」那条有自己的一套（resetAvatarIn / resetResultIn），这里避开它。
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .message:not(.reset-message) {
+    animation: messageArrive 280ms var(--ease-out) both;
+  }
+
+  .message.thinking-message {
+    animation-delay: 90ms;
+  }
+}
+
+@keyframes messageArrive {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .message.agent {
   align-self: flex-start;
   max-width: 100%;
@@ -2554,25 +2581,48 @@ body.chat-expanded-open {
   color: var(--jade-9);
 }
 
+/*
+ * 传送带。切时段、换一批、切档时放一次：问题从左侧、也就是分段控件背后被送出来，
+ * 逐枚错开 30ms——错开是为了让人看出「一条带子在走」，而不是几枚各自淡入；
+ * 总延迟封在 120ms 内，再长就散了。轨道自身 overflow 会把左边界外的胶囊裁掉，
+ * 「从控件背后出来」这层观感是白拿的。
+ * 框的阔/收由 JS 用 FLIP 量出真实宽度来做（见 flipTrackWidth），CSS 只管带子上的货。
+ */
 @media (prefers-reduced-motion: no-preference) {
-  /* 逐枚错开，改数量时不用回来改 CSS */
-  .ai-list button:nth-child(2) {
-    animation: aiPromptIn var(--dur-3) var(--ease-out) 60ms both;
+  .prompt-track.is-feeding > button,
+  .prompt-track.is-feeding .ai-list > button {
+    animation: chipFeed 300ms var(--ease-out) both;
   }
 
-  .ai-list button:nth-child(3) {
-    animation: aiPromptIn var(--dur-3) var(--ease-out) 120ms both;
+  .prompt-track.is-feeding > button:nth-child(2),
+  .prompt-track.is-feeding .ai-list > button:nth-child(2) {
+    animation-delay: 30ms;
   }
 
-  .ai-list button:nth-child(4) {
-    animation: aiPromptIn var(--dur-3) var(--ease-out) 180ms both;
+  .prompt-track.is-feeding > button:nth-child(3),
+  .prompt-track.is-feeding .ai-list > button:nth-child(3) {
+    animation-delay: 60ms;
+  }
+
+  .prompt-track.is-feeding > button:nth-child(4),
+  .prompt-track.is-feeding .ai-list > button:nth-child(4) {
+    animation-delay: 90ms;
+  }
+
+  .prompt-track.is-feeding > button:nth-child(n + 5),
+  .prompt-track.is-feeding .ai-list > button:nth-child(n + 5) {
+    animation-delay: 120ms;
   }
 }
 
-@keyframes aiPromptIn {
+@keyframes chipFeed {
   from {
     opacity: 0;
-    transform: translateY(3px);
+    transform: translateX(-16px);
+  }
+
+  60% {
+    opacity: 1;
   }
 
   to {

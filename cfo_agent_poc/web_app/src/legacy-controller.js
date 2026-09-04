@@ -178,6 +178,11 @@ let state = {
   // ——两者只在「选的那档暂时抽不出东西」时不一致。
   promptTab: loadPromptTab(),
   promptTabActive: loadPromptTab(),
+  // 上一次渲染时轨道说的是哪一段。只有它变了才放重调动效——后台补分类的轮询
+  // 每隔几秒就重渲染一次，跟着放就成了没来由的闪烁。
+  promptRailScope: null,
+  // 「换一批」「切档」这类用户主动换内容的一次性标记，用完即清。
+  promptRailPulse: false,
   customPrompts: [],
   customPromptLimit: 12,
   // 管理弹窗里正在编辑的那条 id；null 表示表单处于「新建」状态。
@@ -1111,7 +1116,122 @@ function renderMyPrompts() {
   });
 }
 
+/** 自定义区间要连日期一起算进签名，不然「换了一段区间」看着像没变。 */
+function promptScopeSignature() {
+  if (state.period === "custom" && state.customRange) {
+    return `custom:${dateKey(state.customRange.start)}~${dateKey(state.customRange.end)}`;
+  }
+  return state.period;
+}
+
+/*
+ * 传送带上货：重启一次 CSS 动画。类名要先摘掉、强制回流、再挂上，
+ * 否则连着两次切换只有第一次动。收尾用定时器而不是 animationend——
+ * 后者在第一枚结束时就会触发，会把还在跑的后几枚掐掉。
+ */
+function playTrackFeed(track) {
+  if (!track || prefersReducedMotion()) return;
+  track.classList.remove("is-feeding");
+  void track.offsetWidth;
+  track.classList.add("is-feeding");
+  window.clearTimeout(Number(track.dataset.feedTimer));
+  track.dataset.feedTimer = window.setTimeout(() => track.classList.remove("is-feeding"), 460);
+}
+
+/*
+ * 框随货走：从换之前那条轨道的实测宽度，过渡到新内容的实测宽度。
+ * 这里必须动真的 width——轨道右边紧跟着「换一批 / 管理」那枚按钮，只有布局真的
+ * 变了，它才会跟着一起阔出去或收回来，整条框才是一个整体在呼吸。参与节点就这一个，
+ * 子元素不超过六枚，这点布局开销买得起。
+ */
+function flipTrackWidth(track, fromWidth) {
+  if (!track || prefersReducedMotion() || !fromWidth) return;
+  const toWidth = track.getBoundingClientRect().width;
+  // 宽度没怎么变就不要做假动作：那会变成一次没有信息量的抖动。
+  if (Math.abs(toWidth - fromWidth) < 2) return;
+
+  const restore = () => {
+    window.clearTimeout(Number(track.dataset.widthTimer));
+    track.style.transition = "";
+    track.style.width = "";
+    // 过渡期间轨道比最终窄，渐隐提示可能算错，落定后再量一次。
+    syncTrackOverflow();
+  };
+  restore();
+  track.style.transition = "none";
+  track.style.width = `${fromWidth}px`;
+  void track.offsetWidth;
+  track.style.transition = `width var(--dur-3) var(--ease-out)`;
+  track.style.width = `${toWidth}px`;
+  // transitionend 可能因为打断而不来，留个兜底把内联样式清干净。
+  track.addEventListener("transitionend", restore, { once: true });
+  track.dataset.widthTimer = window.setTimeout(restore, 520);
+}
+
+/*
+ * 分段控件里那一格的出场与退场。「猜你想问」会因为账本里抽不出问题而整档消失，
+ * 直接 hidden 是「啪」地闪现：控件宽度一跳，旁边两档也跟着弹。
+ * 改成把这一格的宽度和内边距一起从 0 长出来——它自己把邻居推开，退场时反过来被挤没。
+ * 进 300ms、出 220ms：退场比入场快，这是一贯的取法。
+ */
+function squeezeTab(tab, visible, { animate = true } = {}) {
+  if (!tab) return;
+  const squeezing = tab.dataset.squeeze;
+  const shown = !tab.hidden && squeezing !== "out";
+  if (shown === visible && !squeezing) return;
+  if (!animate || prefersReducedMotion()) {
+    delete tab.dataset.squeeze;
+    tab.style.cssText = "";
+    tab.hidden = !visible;
+    return;
+  }
+
+  window.clearTimeout(Number(tab.dataset.squeezeTimer));
+  const settle = () => {
+    window.clearTimeout(Number(tab.dataset.squeezeTimer));
+    delete tab.dataset.squeeze;
+    tab.style.cssText = "";
+    tab.hidden = !visible;
+  };
+
+  // 先摘掉 hidden 与上一次的内联样式，才量得到这一格真正的宽度
+  tab.hidden = false;
+  tab.style.cssText = "";
+  const padding = getComputedStyle(tab).paddingLeft;
+  const natural = tab.getBoundingClientRect().width;
+  if (!natural) return settle();
+
+  tab.dataset.squeeze = visible ? "in" : "out";
+  tab.style.overflow = "hidden";
+  tab.style.whiteSpace = "nowrap";
+  tab.style.transition = "none";
+  tab.style.width = visible ? "0px" : `${natural}px`;
+  tab.style.paddingLeft = visible ? "0px" : padding;
+  tab.style.paddingRight = visible ? "0px" : padding;
+  tab.style.opacity = visible ? "0" : "1";
+  void tab.offsetWidth;
+
+  const duration = visible ? 300 : 220;
+  tab.style.transition = `width ${duration}ms var(--ease-out), padding ${duration}ms var(--ease-out), opacity ${Math.round(duration * 0.7)}ms var(--ease-out)`;
+  tab.style.width = visible ? `${natural}px` : "0px";
+  tab.style.paddingLeft = visible ? padding : "0px";
+  tab.style.paddingRight = visible ? padding : "0px";
+  tab.style.opacity = visible ? "1" : "0";
+  tab.addEventListener("transitionend", settle, { once: true });
+  // transitionend 会因为打断而不来，留个兜底
+  tab.dataset.squeezeTimer = window.setTimeout(settle, duration + 120);
+}
+
 function renderPromptRail() {
+  // 换内容之前先量：这就是框「阔/收」的起点，切档时它是上一档那条轨道。
+  const previousTrack = document.querySelector(".prompt-track:not([hidden])");
+  const previousWidth = previousTrack ? previousTrack.getBoundingClientRect().width : 0;
+  const previousText = previousTrack ? previousTrack.textContent : "";
+  const scope = promptScopeSignature();
+  // 首次渲染不算「变了」：那是入场，不是改口径。
+  const firstRender = state.promptRailScope === null;
+  const retune = !firstRender && state.promptRailScope !== scope;
+  state.promptRailScope = scope;
   const guessCount = renderGuessPrompts();
   renderMyPrompts();
 
@@ -1125,7 +1245,7 @@ function renderPromptRail() {
   document.querySelectorAll("[data-prompt-tab]").forEach((tab) => {
     const key = tab.dataset.promptTab;
     const isActive = key === active;
-    tab.hidden = !usable[key];
+    squeezeTab(tab, usable[key], { animate: !firstRender });
     tab.classList.toggle("is-active", isActive);
     tab.setAttribute("aria-selected", String(isActive));
     // tablist 的规矩：只有选中那一枚进 Tab 序列，组内靠左右方向键走。
@@ -1141,6 +1261,24 @@ function renderPromptRail() {
   if (manage) manage.hidden = active !== "mine" || Boolean(state.demo);
 
   syncTrackOverflow();
+
+  /*
+   * 动效只服务于真的换了内容的那一档。切时段时：
+   * - 「常用」和「我的」都是固定板块——那几枚问题是定死的，跟着时段改的只是说法
+   *   （今日支出 → 本月支出、本月｜奶茶账 → 全部｜奶茶账），在眼里仍是同一块，
+   *   为一次改口整排抖一下是没有信息量的；
+   * - 只有「猜你想问」是现抽的，切时段后抽出来的可能真的换了几枚，那才值得走一趟
+   *   传送带；抽中的还是原来那几枚就照样不动。
+   * 用户主动换内容（换一批、切档）则一律要动——那是对操作的回应，不是数据的变化。
+   */
+  const track = document.querySelector(`.prompt-track[data-track="${active}"]`);
+  const contentChanged =
+    active === "guess" && track && track === previousTrack && previousText !== track.textContent;
+  if (state.promptRailPulse || (retune && contentChanged)) {
+    state.promptRailPulse = false;
+    flipTrackWidth(track, previousWidth);
+    playTrackFeed(track);
+  }
 }
 
 /*
@@ -1161,6 +1299,7 @@ function selectPromptTab(tab, { focus = false } = {}) {
   } catch (error) {
     // 隐私模式下写不进去，记不住也不影响这次使用。
   }
+  state.promptRailPulse = true;
   renderPromptRail();
   if (focus) document.querySelector(`[data-prompt-tab="${tab}"]`)?.focus({ preventScroll: true });
 }
@@ -3888,6 +4027,22 @@ function updateChatLatestButton() {
   button.hidden = !state.chatExpanded || chatIsAtLatest();
 }
 
+/*
+ * 新消息到场时跟到底部。原来是 scrollTop = scrollHeight 的硬跳：气泡还没升起来，
+ * 视口已经到位了，看着像画面闪了一下。改成平滑跟随，和气泡的入场同时发生，
+ * 两者合起来才是「这句话被送进去了」。连着两次（提问 + 思考气泡）由浏览器自己接管，
+ * 后一次会平滑接管前一次。
+ */
+function followChatToLatest() {
+  const messages = $("chatMessages");
+  if (!messages) return;
+  if (prefersReducedMotion()) {
+    messages.scrollTop = messages.scrollHeight;
+    return;
+  }
+  messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+}
+
 function scrollChatToLatest() {
   const messages = $("chatMessages");
   if (!messages) return;
@@ -4112,7 +4267,7 @@ function addMessage(role, text, options = {}) {
   }
   node.append(avatar, bubble);
   container.appendChild(node);
-  container.scrollTop = container.scrollHeight;
+  followChatToLatest();
   updateChatLatestButton();
   if (shouldSave && (role === "user" || role === "agent")) {
     state.chatHistory.push({
@@ -4221,7 +4376,7 @@ async function submitQuestion(question, { scoped = true } = {}) {
     state.chatHistory = state.chatHistory.slice(-12);
   } finally {
     setChatBusy(false);
-    $("chatMessages").scrollTop = $("chatMessages").scrollHeight;
+    followChatToLatest();
     updateChatLatestButton();
   }
 }
@@ -5490,6 +5645,7 @@ function wireInteractions() {
   updateQuickPrompts();
   $("rerollPrompts").addEventListener("click", () => {
     rollPrompts({ exclude: state.promptPicks });
+    state.promptRailPulse = true;
     renderPromptRail();
     window.refreshCfoMotion?.({ scope: "global", quiet: true });
   });
@@ -5509,7 +5665,8 @@ function wireInteractions() {
   // tablist 的标准键盘行为：左右在三档间走，Home/End 跳到两端。
   document.querySelector(".prompt-tabs").addEventListener("keydown", (event) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-    const tabs = Array.from(document.querySelectorAll("[data-prompt-tab]")).filter((node) => !node.hidden);
+    const tabs = Array.from(document.querySelectorAll("[data-prompt-tab]"))
+      .filter((node) => !node.hidden && node.dataset.squeeze !== "out");
     if (tabs.length < 2) return;
     event.preventDefault();
     const current = tabs.findIndex((node) => node.dataset.promptTab === state.promptTabActive);
