@@ -4719,10 +4719,18 @@ function transactionDayMap() {
 }
 
 /** 草稿态可能只点了起点，或者终点在起点之前，这里统一成规规矩矩的闭区间。 */
-function normalizedDraft() {
+/*
+ * 两份草稿必须分开：
+ * - committed（默认）是「点出来」的那份，按下应用落地的就是它；
+ * - preview 才把悬停那天算进去，只用来画日历和给个预读数。
+ * 混成一份的后果是预览会变成应用值：预览一消失（手指移开、指针离开网格），
+ * 按下去的区间就缩回起点那一天。
+ */
+function normalizedDraft({ preview = false } = {}) {
   const draft = state.rangeDraft;
   if (!draft?.start) return null;
-  const end = draft.end || (state.rangeHoverKey ? dateFromKey(state.rangeHoverKey) : draft.start);
+  const hovered = preview && state.rangeHoverKey ? dateFromKey(state.rangeHoverKey) : null;
+  const end = draft.end || hovered || draft.start;
   return end < draft.start ? { start: end, end: draft.start } : { start: draft.start, end };
 }
 
@@ -4789,7 +4797,7 @@ function renderRangeMonths() {
 
 /** 选区只改 class，不重建网格——鼠标划过预览时才不会闪。 */
 function paintRangeSelection() {
-  const draft = normalizedDraft();
+  const draft = normalizedDraft({ preview: true });
   const cells = Array.from(document.querySelectorAll("#rangeMonths [data-range-day]"));
   if (!draft) {
     // 取消选中之后得把上一次的高亮抹掉，否则日历上还留着一段「选中的样子」。
@@ -4830,7 +4838,8 @@ function paintRangeSelection() {
 function renderRangeSummary() {
   const node = $("rangeSummary");
   const apply = $("rangeApply");
-  const draft = normalizedDraft();
+  const committed = normalizedDraft();
+  const draft = normalizedDraft({ preview: true });
   if (!node) return;
 
   if (!draft) {
@@ -4845,20 +4854,24 @@ function renderRangeSummary() {
     return;
   }
 
-  const singleDay = sameDay(draft.start, draft.end);
   const bounds = { start: draft.start, end: addDays(draft.end, 1) };
   const transactions = transactionsBetween(bounds.start, bounds.end);
   const days = Math.max(1, Math.round((bounds.end - bounds.start) / 86400000));
 
+  // 按钮说的是 committed：悬停预览再长，按下去也只会落地已经点出来的那段。
   if (apply) {
+    const committedDays = Math.max(
+      1,
+      Math.round((addDays(committed.end, 1) - committed.start) / 86400000),
+    );
     apply.disabled = false;
-    apply.textContent = singleDay ? "只应用这一天" : `应用这 ${days} 天`;
+    apply.textContent = committedDays === 1 ? "只应用这一天" : `应用这 ${committedDays} 天`;
   }
 
-  if (!state.rangeDraft.end && !state.rangeHoverKey) {
+  if (!state.rangeDraft.end) {
     node.innerHTML = `
       <b>${escapeHtml(customRangeLabel(draft))}</b>
-      <span>还差终点：再点一天，或者按「只应用这一天」。</span>
+      <span>${state.rangeHoverKey ? `预览 ${days} 天 · 再点一下定终点` : "还差终点：再点一天，或者按「只应用这一天」。"}</span>
     `;
     return;
   }
@@ -5539,22 +5552,29 @@ function wireInteractions() {
     if (cell && !cell.disabled) pickRangeDay(cell.dataset.rangeDay);
   });
 
-  // 只点了起点时，划过哪天就预览到哪天。
-  rangeMonths.addEventListener("mouseover", (event) => {
-    if (state.rangeDraft?.end) return;
-    const cell = event.target.closest("[data-range-day]");
-    if (!cell || cell.disabled || state.rangeHoverKey === cell.dataset.rangeDay) return;
-    state.rangeHoverKey = cell.dataset.rangeDay;
-    paintRangeSelection();
-    renderRangeSummary();
-  });
+  /*
+   * 只点了起点时，划过哪天就预览到哪天——但这套只接给真有指针的设备。
+   * 触摸屏上 iOS 会在点按时先发 mouseover：第二下的 click 一旦被吞掉，
+   * 草稿里其实还没有终点，小结却已经被这条预览撑成了一整段；等手指移向「应用」，
+   * 网格的 mouseleave 把预览清掉，按下去落地的就只剩起点那一天。
+   */
+  if (window.matchMedia?.("(hover: hover)").matches) {
+    rangeMonths.addEventListener("mouseover", (event) => {
+      if (state.rangeDraft?.end) return;
+      const cell = event.target.closest("[data-range-day]");
+      if (!cell || cell.disabled || state.rangeHoverKey === cell.dataset.rangeDay) return;
+      state.rangeHoverKey = cell.dataset.rangeDay;
+      paintRangeSelection();
+      renderRangeSummary();
+    });
 
-  rangeMonths.addEventListener("mouseleave", () => {
-    if (!state.rangeHoverKey) return;
-    state.rangeHoverKey = null;
-    paintRangeSelection();
-    renderRangeSummary();
-  });
+    rangeMonths.addEventListener("mouseleave", () => {
+      if (!state.rangeHoverKey) return;
+      state.rangeHoverKey = null;
+      paintRangeSelection();
+      renderRangeSummary();
+    });
+  }
 
   rangeMonths.addEventListener("keydown", handleRangeGridKeydown);
 
