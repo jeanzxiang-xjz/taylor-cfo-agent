@@ -4455,11 +4455,11 @@ body.modal-open {
 .category-icon-options svg,
 .category-editor-empty svg,
 .category-row-order svg {
-  width: 18px;
-  height: 18px;
+  width: 15px;
+  height: 15px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.35;
+  stroke-width: 1.6;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -4508,20 +4508,23 @@ body.modal-open {
   display: grid;
   place-items: center;
   border-radius: var(--r-sm);
-  color: var(--muted-dim);
+  /* 静息就要看得清：手机上没有 hover 这一档可借 */
+  color: var(--muted);
+  transition:
+    color var(--dur-2) var(--ease-out),
+    background var(--dur-2) var(--ease-out);
 }
 
-.category-row-order button:last-child svg {
-  transform: rotate(90deg);
-}
-
-.category-row-order button:first-child svg {
-  transform: rotate(-90deg);
-}
-
-.category-row-order button:hover {
+.category-row-order button:hover:not([disabled]) {
   background: var(--ink-4);
-  color: var(--text);
+  color: var(--text-strong);
+}
+
+/* 走到头的那一端：先看见，不用点一下才发现没反应 */
+.category-row-order button[disabled] {
+  color: var(--muted-dim);
+  opacity: 0.32;
+  cursor: not-allowed;
 }
 
 .category-list-empty {
@@ -5130,6 +5133,18 @@ body.modal-open {
 .prompt-form-note {
   color: var(--amber-8);
   font-size: var(--fs-xs);
+}
+
+@media (max-width: 720px) {
+  /* 窄屏弹窗铺满整屏，排序箭头的可点范围跟着放大到 34，图标还是 15。 */
+  .category-row-order {
+    grid-template-columns: 34px 34px;
+  }
+
+  .category-row-order button {
+    width: 34px;
+    height: 34px;
+  }
 }
 
 @media (max-width: 720px) {
