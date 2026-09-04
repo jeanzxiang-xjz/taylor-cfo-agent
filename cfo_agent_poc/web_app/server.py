@@ -13,13 +13,13 @@ import statistics
 import sys
 import urllib.error
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
-from generate_snapshot import build_payload
+from generate_snapshot import build_payload as build_snapshot_payload, correction_fields
 
 
 WEB_DIR = Path(__file__).resolve().parent
@@ -52,6 +52,25 @@ DEBUG_TRACE = os.environ.get("CFO_DEBUG") == "1"
 from mail_sync import DEFAULT_SUBJECT, connect_imap, process_mailbox_once_detailed, safe_logout
 from bill_store import capture_overrides, ensure_bill_tables
 from classification_service import settle_stuck_transactions, start_background_enrichment
+from custom_prompts import (
+    create_prompt,
+    delete_prompt,
+    ensure_prompt_tables,
+    list_prompts,
+    patch_prompt,
+    set_prompt_order,
+)
+from category_catalog import (
+    CategoryError,
+    category_labels,
+    category_version,
+    create_category,
+    delete_category,
+    ensure_category_tables,
+    get_catalog,
+    patch_category,
+    set_primary_order,
+)
 
 PROMPT_PATH = ROOT_DIR / "prompts" / "cfo_system_prompt.md"
 PROFILE_REPORT_PROMPT_PATH = ROOT_DIR / "prompts" / "profile_report_prompt.md"
@@ -70,36 +89,10 @@ AUTH_COOKIE_NAME = "cfo_session"
 MAX_REQUEST_BODY_BYTES = int(os.environ.get("CFO_MAX_REQUEST_BODY_BYTES", "12000"))
 MAX_CHAT_MESSAGE_CHARS = int(os.environ.get("CFO_MAX_CHAT_MESSAGE_CHARS", "600"))
 CLASSIFICATION_TIMEOUT_SECONDS = float(os.environ.get("CFO_CLASSIFICATION_TIMEOUT_SECONDS", "12"))
-
-PROFILE_CATEGORY_LABELS = {
-    "coffee_tea": "咖啡/奶茶",
-    "food_delivery": "外卖/餐饮",
-    "parking": "停车交通",
-    "car_charging": "车辆充电",
-    "auto": "爱车养车",
-    "groceries": "超市便利",
-    "fruit": "水果鲜果",
-    "bakery": "烘焙面包",
-    "education": "教育考试",
-    "books": "图书书店",
-    "ecommerce": "网购",
-    "transport": "交通",
-    "healthcare": "医疗",
-    "investment": "投资理财",
-    "property": "物业生活",
-    "telecom": "通信充值",
-    "entertainment": "演出票务",
-    "credit_repayment": "信用借还",
-    "utilities": "水电燃缴费",
-    "stationery": "文具用品",
-    "digital_services": "数字服务",
-    "general_shopping": "日常购物",
-    "leisure_travel": "旅行休闲",
-    "lottery": "彩票",
-    "personal_transfer": "个人转账",
-    "uncategorized": "未分类",
-}
-
+ANALYSIS_ELIGIBLE_SQL = (
+    "paid_at IS NOT NULL AND amount IS NOT NULL AND amount > 0 "
+    "AND merchant IS NOT NULL AND TRIM(merchant) != ''"
+)
 READY_FOOD_DRINK_CATEGORIES = {"food_delivery", "coffee_tea", "bakery"}
 FOOD_PATTERN_RULES = (
     {
@@ -395,13 +388,26 @@ def parse_paid_at(value: str | None) -> datetime | None:
         return None
 
 
+def build_payload() -> dict:
+    """Use the server's active database, including tests that patch DB_PATH."""
+    return build_snapshot_payload(DB_PATH)
+
+
+def is_analysis_eligible(tx: dict) -> bool:
+    return not correction_fields(tx)
+
+
 def start_of_week(value: datetime) -> datetime:
     start = value.replace(hour=0, minute=0, second=0, microsecond=0)
     return start - timedelta(days=start.isoweekday() - 1)
 
 
 def scoped_transactions(transactions: list[dict], period: str) -> list[dict]:
-    dated = [(tx, parse_paid_at(tx.get("paid_at"))) for tx in transactions]
+    dated = [
+        (tx, parse_paid_at(tx.get("paid_at")))
+        for tx in transactions
+        if tx.get("analysis_eligible", is_analysis_eligible(tx))
+    ]
     dates = sorted((paid_at for _, paid_at in dated if paid_at), reverse=True)
     if not dates:
         return []
@@ -415,7 +421,7 @@ def scoped_transactions(transactions: list[dict], period: str) -> list[dict]:
         return [tx for tx, paid_at in dated if paid_at and start <= paid_at < end]
     if period == "month":
         return [tx for tx, paid_at in dated if paid_at and paid_at.year == anchor.year and paid_at.month == anchor.month]
-    return transactions
+    return [tx for tx, paid_at in dated if paid_at]
 
 
 def amount_value(tx: dict) -> float:
@@ -424,11 +430,17 @@ def amount_value(tx: dict) -> float:
 
 
 def category_summary(transactions: list[dict]) -> list[dict]:
+    labels = category_labels(DB_PATH)
     grouped: dict[str, dict] = {}
     for tx in transactions:
         category = tx.get("category") or "uncategorized"
         if category not in grouped:
-            grouped[category] = {"category": category, "amount": 0.0, "count": 0}
+            grouped[category] = {
+                "category": category,
+                "category_name": labels.get(category, category),
+                "amount": 0.0,
+                "count": 0,
+            }
         grouped[category]["amount"] += max(amount_value(tx), 0)
         grouped[category]["count"] += 1
 
@@ -487,6 +499,7 @@ def is_public_static_path(path: str) -> bool:
 def chat_context(period: str, budgets: dict | None = None) -> dict:
     payload = build_payload()
     transactions = payload.get("transactions", [])
+    labels = category_labels(DB_PATH)
     selected = scoped_transactions(transactions, period)
     largest = max(selected, key=lambda tx: amount_value(tx), default=None)
     selected_total = sum(amount_value(tx) for tx in selected)
@@ -507,7 +520,11 @@ def chat_context(period: str, budgets: dict | None = None) -> dict:
             "total_spend_cny": round(sum(amount_value(tx) for tx in month), 2),
             "category_summary": category_summary(month),
         },
-        "recent_transactions": transactions[:MAX_CONTEXT_TRANSACTIONS],
+        "recent_transactions": [
+            {**tx, "category_name": labels.get(tx.get("category") or "uncategorized", tx.get("category") or "未分类")}
+            for tx in transactions
+            if tx.get("analysis_eligible", is_analysis_eligible(tx))
+        ][:MAX_CONTEXT_TRANSACTIONS],
     }
 
 
@@ -530,7 +547,11 @@ def load_profile_report_prompt() -> str:
 def _profile_outflows() -> list[dict]:
     rows = []
     for tx in build_payload().get("transactions", []):
-        if tx.get("direction") == "inflow" or tx.get("status") == "failed":
+        if (
+            not tx.get("analysis_eligible", is_analysis_eligible(tx))
+            or tx.get("direction") == "inflow"
+            or tx.get("status") == "failed"
+        ):
             continue
         paid_at = parse_paid_at(tx.get("paid_at"))
         try:
@@ -549,6 +570,7 @@ def build_lifestyle_health_features(transactions: list[dict]) -> dict:
     这里不直接判断健康状况：付款时间未必等于进食时间，商户名和商品词也不能
     代替营养成分。函数只负责提供给模型可复核的时段、频次和关键词证据。
     """
+    labels = category_labels(DB_PATH)
     slots = {
         "breakfast_reference": {"label": "早餐参考时段（5-10点）", "count": 0, "amount_cny": 0.0},
         "lunch_reference": {"label": "午餐参考时段（10-15点）", "count": 0, "amount_cny": 0.0},
@@ -613,7 +635,7 @@ def build_lifestyle_health_features(transactions: list[dict]) -> dict:
         row = {
             "paid_at": paid_at.isoformat(timespec="minutes"),
             "merchant": merchant or product or "未知商户",
-            "category": PROFILE_CATEGORY_LABELS.get(category, category),
+            "category": labels.get(category, category),
             "amount_cny": round(amount, 2),
         }
         food_rows.append(row)
@@ -683,7 +705,9 @@ def build_lifestyle_health_features(transactions: list[dict]) -> dict:
     }
 
 
-def profile_ledger_fingerprint(transactions: list[dict] | None = None) -> str:
+def profile_ledger_fingerprint(
+    transactions: list[dict] | None = None, *, catalog_version: int = 1
+) -> str:
     rows = transactions if transactions is not None else _profile_outflows()
     material = [
         {
@@ -698,12 +722,18 @@ def profile_ledger_fingerprint(transactions: list[dict] | None = None) -> str:
         }
         for tx in rows
     ]
-    encoded = json.dumps(material, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    encoded = json.dumps(
+        {"catalog_version": catalog_version, "transactions": material},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
 def build_profile_features(transactions: list[dict] | None = None) -> dict:
     rows = transactions if transactions is not None else _profile_outflows()
+    labels = category_labels(DB_PATH)
     if not rows:
         return {
             "coverage": {"start_date": None, "end_date": None, "transaction_count": 0, "total_outflow_cny": 0, "active_days": 0, "active_months": 0},
@@ -739,7 +769,7 @@ def build_profile_features(transactions: list[dict] | None = None) -> dict:
         category = tx.get("category") or "uncategorized"
         category_item = category_groups.setdefault(category, {
             "key": category,
-            "label": PROFILE_CATEGORY_LABELS.get(category, category),
+            "label": labels.get(category, category),
             "amount_cny": 0.0,
             "count": 0,
         })
@@ -750,7 +780,7 @@ def build_profile_features(transactions: list[dict] | None = None) -> dict:
         if merchant:
             merchant_item = merchant_groups.setdefault(merchant, {
                 "merchant": merchant,
-                "category": PROFILE_CATEGORY_LABELS.get(category, category),
+                "category": labels.get(category, category),
                 "amount_cny": 0.0,
                 "count": 0,
             })
@@ -795,7 +825,7 @@ def build_profile_features(transactions: list[dict] | None = None) -> dict:
         representative.append({
             "paid_at": tx.get("paid_at"),
             "merchant": tx.get("merchant") or tx.get("product") or tx.get("thing") or "未知商户",
-            "category": PROFILE_CATEGORY_LABELS.get(tx.get("category") or "uncategorized", tx.get("category") or "未分类"),
+            "category": labels.get(tx.get("category") or "uncategorized", tx.get("category") or "未分类"),
             "amount_cny": tx["_amount"],
         })
 
@@ -1013,7 +1043,7 @@ def call_profile_report_deepseek(features: dict) -> dict:
 
 def latest_profile_report() -> dict:
     transactions = _profile_outflows()
-    fingerprint = profile_ledger_fingerprint(transactions)
+    fingerprint = profile_ledger_fingerprint(transactions, catalog_version=category_version(DB_PATH))
     features = build_profile_features(transactions)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -1044,7 +1074,7 @@ def latest_profile_report() -> dict:
 def generate_profile_report(force: bool = False) -> dict:
     transactions = _profile_outflows()
     features = build_profile_features(transactions)
-    fingerprint = profile_ledger_fingerprint(transactions)
+    fingerprint = profile_ledger_fingerprint(transactions, catalog_version=category_version(DB_PATH))
     if not transactions:
         return {"ok": False, "code": "empty_ledger", "answer": "账本里还没有可用于生成画像的支出记录。"}
 
@@ -1097,7 +1127,46 @@ PERIOD_LABELS = {
 }
 
 
-def compute_period_date_range(period: str) -> dict | None:
+def parse_custom_range(custom_range: dict | None) -> dict | None:
+    """
+    前端传来的是闭区间日期（YYYY-MM-DD），这里转成和其余周期一致的半开区间
+    [start 00:00, end+1 天 00:00)。任何解析不出来或首尾颠倒的输入都返回 None，
+    交给调用方退回「全部」口径，而不是抛错让整轮对话失败。
+    """
+    if not isinstance(custom_range, dict):
+        return None
+    try:
+        start = date.fromisoformat(str(custom_range.get("start", "")).strip()[:10])
+        end = date.fromisoformat(str(custom_range.get("end", "")).strip()[:10])
+    except ValueError:
+        return None
+    if end < start:
+        return None
+    return {
+        "start": datetime.combine(start, datetime.min.time()).isoformat(timespec="seconds"),
+        "end": datetime.combine(end + timedelta(days=1), datetime.min.time()).isoformat(timespec="seconds"),
+    }
+
+
+def custom_period_label(custom_range: dict | None) -> str:
+    """把闭区间日期读成中文；首尾同一天就只说那一天。"""
+    if not isinstance(custom_range, dict):
+        return "全部"
+    try:
+        start = date.fromisoformat(str(custom_range.get("start", "")).strip()[:10])
+        end = date.fromisoformat(str(custom_range.get("end", "")).strip()[:10])
+    except ValueError:
+        return "全部"
+    if start > end:
+        start, end = end, start
+    if start == end:
+        return f"{start.month}月{start.day}日"
+    return f"{start.month}月{start.day}日–{end.month}月{end.day}日"
+
+
+def compute_period_date_range(period: str, custom_range: dict | None = None) -> dict | None:
+    if period == "custom":
+        return parse_custom_range(custom_range)
     now = datetime.now()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     if period == "today":
@@ -1135,18 +1204,23 @@ def compute_period_date_range(period: str) -> dict | None:
     return None  # "all" 或未知，表示不限时间范围
 
 
-def get_orientation_context(period: str, budgets: dict | None = None) -> dict:
+def get_orientation_context(period: str, budgets: dict | None = None, custom_range: dict | None = None) -> dict:
     import sqlite3 as _sqlite3
     try:
         conn = _sqlite3.connect(str(DB_PATH))
         conn.row_factory = _sqlite3.Row
         row = conn.execute(
             "SELECT MIN(paid_at) as earliest, MAX(paid_at) as latest, COUNT(*) as total "
-            "FROM transactions WHERE paid_at IS NOT NULL AND COALESCE(status, '') != 'failed'"
+            f"FROM transactions WHERE {ANALYSIS_ELIGIBLE_SQL} AND COALESCE(status, '') != 'failed'"
         ).fetchone()
-        cats = [r[0] for r in conn.execute(
-            "SELECT DISTINCT category FROM transactions WHERE category IS NOT NULL ORDER BY category"
-        ).fetchall()]
+        catalog_names = category_labels(DB_PATH, enabled_only=True)
+        cats = [
+            {"id": r[0], "name": catalog_names.get(r[0], r[0])}
+            for r in conn.execute(
+                "SELECT DISTINCT category FROM transactions WHERE category IS NOT NULL ORDER BY category"
+            ).fetchall()
+            if r[0] in catalog_names
+        ]
         conn.close()
         data_range = {
             "earliest_transaction": row["earliest"],
@@ -1160,7 +1234,9 @@ def get_orientation_context(period: str, budgets: dict | None = None) -> dict:
     context: dict = {
         "today": datetime.now().date().isoformat(),
         "ui_selected_period": period,
-        "current_period_label": PERIOD_LABELS.get(period, "全部"),
+        "current_period_label": (
+            custom_period_label(custom_range) if period == "custom" else PERIOD_LABELS.get(period, "全部")
+        ),
         "user_budget_config": budgets or {},
         "data_range": data_range,
         "available_categories": cats,
@@ -1168,8 +1244,8 @@ def get_orientation_context(period: str, budgets: dict | None = None) -> dict:
 
     # 预注入选中时段的权威汇总：常见问题模型可直接引用、无需再调工具（省一轮 API）。
     # 复用 _tool_query_spending_summary 保证口径与工具完全一致。
-    period_range = compute_period_date_range(period)
-    if period_range is None:  # "all"：回退到最早交易 ~ 明日零点
+    period_range = compute_period_date_range(period, custom_range)
+    if period_range is None:  # "all"、非法自定义区间：回退到最早交易 ~ 明日零点
         tomorrow = (datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
                     + timedelta(days=1)).isoformat(timespec="seconds")
         period_range = {
@@ -1205,7 +1281,10 @@ def _tool_query_spending_summary(args: dict) -> dict:
     try:
         conn = _sqlite3.connect(str(DB_PATH))
         conn.row_factory = _sqlite3.Row
-        base_where = "paid_at >= ? AND paid_at < ? AND COALESCE(status, '') != 'failed'"
+        base_where = (
+            f"{ANALYSIS_ELIGIBLE_SQL} AND paid_at >= ? AND paid_at < ? "
+            "AND COALESCE(status, '') != 'failed'"
+        )
         params: list = [start_date, end_date]
 
         # 权威区间总计：所有分组/无分组场景共用，避免模型自行求和
@@ -1270,20 +1349,25 @@ def _tool_query_spending_summary(args: dict) -> dict:
             params,
         ).fetchall()
         conn.close()
+        result_rows = [
+            {
+                "group": r["grp"],
+                "outflow_count": r["out_cnt"] or 0,
+                "outflow_cny": round(r["out"] or 0, 2),
+                "inflow_cny": round(r["infl"] or 0, 2),
+                "max_single_cny": round(r["max_out"] or 0, 2),
+            }
+            for r in rows
+        ]
+        if group_by == "category":
+            labels = category_labels(DB_PATH)
+            for item in result_rows:
+                item["group_name"] = labels.get(item["group"] or "uncategorized", item["group"] or "未分类")
         return {
             "period": {"start": start_date, "end": end_date},
             "group_by": group_by,
             "total": authoritative_total,
-            "rows": [
-                {
-                    "group": r["grp"],
-                    "outflow_count": r["out_cnt"] or 0,
-                    "outflow_cny": round(r["out"] or 0, 2),
-                    "inflow_cny": round(r["infl"] or 0, 2),
-                    "max_single_cny": round(r["max_out"] or 0, 2),
-                }
-                for r in rows
-            ],
+            "rows": result_rows,
             "note": "区间总计请引用顶层 total（total_outflow_cny / outflow_transaction_count），勿对 rows 自行加总。",
         }
     except Exception as exc:
@@ -1303,11 +1387,13 @@ def _tool_query_lifestyle_health_signals(args: dict) -> dict:
             "SELECT paid_at, merchant, product, thing, category, amount, direction, status "
             "FROM transactions "
             "WHERE paid_at >= ? AND paid_at < ? "
+            f"AND {ANALYSIS_ELIGIBLE_SQL} "
             "AND direction = 'outflow' AND COALESCE(status, '') != 'failed' "
             "ORDER BY paid_at ASC",
             [start_date, end_date],
         ).fetchall()
         conn.close()
+        labels = category_labels(DB_PATH)
         return {
             "period": {"start": start_date, "end": end_date},
             "features": build_lifestyle_health_features([dict(row) for row in rows]),
@@ -1327,9 +1413,10 @@ def _tool_search_transactions(args: dict) -> dict:
     max_amount = args.get("max_amount")
     limit = min(int(args.get("limit", 20)), 50)
     try:
+        labels = category_labels(DB_PATH)
         conn = _sqlite3.connect(str(DB_PATH))
         conn.row_factory = _sqlite3.Row
-        conditions = ["COALESCE(status, '') != 'failed'"]
+        conditions = [ANALYSIS_ELIGIBLE_SQL, "COALESCE(status, '') != 'failed'"]
         params: list = []
         if start_date:
             conditions.append("paid_at >= ?")
@@ -1365,6 +1452,7 @@ def _tool_search_transactions(args: dict) -> dict:
                     "merchant": r["merchant"],
                     "thing": r["thing"],
                     "category": r["category"],
+                    "category_name": labels.get(r["category"] or "uncategorized", r["category"] or "未分类"),
                     "amount_cny": r["amount"],
                     "direction": r["direction"],
                     "status": r["status"],
@@ -1388,36 +1476,6 @@ def execute_tool(name: str, args: dict) -> dict:
     return {"error": f"未知工具：{name}"}
 
 
-CATEGORY_LABELS = {
-    "coffee_tea": "咖啡/奶茶",
-    "food_delivery": "外卖/餐饮",
-    "parking": "停车",
-    "car_charging": "车辆充电",
-    "auto": "爱车养车",
-    "groceries": "超市便利",
-    "fruit": "水果",
-    "bakery": "烘焙",
-    "education": "教育考试",
-    "books": "图书",
-    "ecommerce": "网购",
-    "transport": "交通",
-    "healthcare": "医疗",
-    "investment": "投资理财",
-    "property": "物业生活",
-    "telecom": "通信充值",
-    "entertainment": "演出票务",
-    "credit_repayment": "信用借还",
-    "utilities": "水电燃缴费",
-    "stationery": "文具用品",
-    "digital_services": "数字服务",
-    "general_shopping": "日常购物",
-    "leisure_travel": "旅行休闲",
-    "lottery": "彩票",
-    "personal_transfer": "个人转账",
-    "uncategorized": "未分类",
-}
-
-
 def _demo_lifestyle_tip(features: dict) -> str:
     """用演示账本的组合线索给出一条克制提醒，不把推测写成诊断。"""
     late = features.get("late_food_drink_payments") or {}
@@ -1434,9 +1492,9 @@ def _demo_lifestyle_tip(features: dict) -> str:
     return f"🌿 生活提醒：账单里有 {signal['count']} 笔{signal['label']}；下次点单时给清淡、少糖或少油的选项留一个位置。"
 
 
-def demo_answer(message: str, period: str) -> dict:
+def demo_answer(message: str, period: str, custom_range: dict | None = None) -> dict:
     """Demo 模式且未配置 LLM Key 时的兜底回答：直接查询演示账本并模板化输出。"""
-    period_range = compute_period_date_range(period)
+    period_range = compute_period_date_range(period, custom_range)
     if period_range is None:
         tomorrow = (datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
                     + timedelta(days=1)).isoformat(timespec="seconds")
@@ -1445,7 +1503,7 @@ def demo_answer(message: str, period: str) -> dict:
     summary = _tool_query_spending_summary(query_args).get("summary", {})
     grouped = _tool_query_spending_summary({**query_args, "group_by": "category"})
     lifestyle_health = _tool_query_lifestyle_health_signals(query_args)
-    label = PERIOD_LABELS.get(period, "全部")
+    label = custom_period_label(custom_range) if period == "custom" else PERIOD_LABELS.get(period, "全部")
 
     lines = []
     count = summary.get("outflow_transaction_count", 0)
@@ -1454,7 +1512,7 @@ def demo_answer(message: str, period: str) -> dict:
 
     rows = grouped.get("rows", []) if "error" not in grouped else []
     tops = [
-        f"{CATEGORY_LABELS.get(row['group'], row['group'] or '未分类')} ¥{row['outflow_cny']:.2f}（{row['outflow_count']} 笔）"
+        f"{row.get('group_name') or row['group'] or '未分类'} ¥{row['outflow_cny']:.2f}（{row['outflow_count']} 笔）"
         for row in rows[:3]
         if row.get("outflow_cny")
     ]
@@ -1483,18 +1541,24 @@ def demo_answer(message: str, period: str) -> dict:
     }
 
 
-def call_deepseek(message: str, period: str, history: list[dict], budgets: dict | None = None) -> dict:
+def call_deepseek(
+    message: str,
+    period: str,
+    history: list[dict],
+    budgets: dict | None = None,
+    custom_range: dict | None = None,
+) -> dict:
     api_key = os.environ.get("DEEPSEEK_API_KEY")
     if not api_key:
         if DEMO_MODE:
-            return demo_answer(message, period)
+            return demo_answer(message, period, custom_range)
         return {
             "ok": False,
             "code": "missing_api_key",
             "answer": "DeepSeek API Key 还没有配置。请在启动 Web 服务前设置 DEEPSEEK_API_KEY，然后刷新页面重试。",
         }
 
-    orientation = get_orientation_context(period, budgets)
+    orientation = get_orientation_context(period, budgets, custom_range)
     compact_history = [
         {"role": item.get("role"), "content": str(item.get("content", ""))[:1200]}
         for item in history[-8:]
@@ -1660,11 +1724,23 @@ def transaction_evidence(transaction_uid: str) -> dict | None:
     transaction_raw_text = record.pop("raw_text", "")
     ocr_text = capture_ocr_text or transaction_raw_text
     record.pop("raw_capture_hash", None)
+    missing = correction_fields(record)
+    record["correction_fields"] = missing
+    record["analysis_eligible"] = not missing
+    active_warnings = [
+        warning
+        for warning in warnings
+        if not any(
+            warning in {f"missing_{field}", f"invalid_{field}"} and field not in missing
+            for field in ("amount", "paid_at", "merchant")
+        )
+    ]
     return {
         "ok": True,
         "transaction": record,
         "ocr_text": ocr_text,
-        "parse_warnings": warnings,
+        "parse_warnings": active_warnings,
+        "original_parse_warnings": warnings,
         "edited_fields": edited_fields,
         "editable": not DEMO_MODE,
         "image_url": f"/api/transaction-evidence-image?uid={quote(transaction_uid)}" if image_path else None,
@@ -1718,7 +1794,7 @@ def _edit_paid_at(value: object) -> str:
 
 def _edit_category(value: object) -> str:
     category = str(value or "").strip()
-    if category not in CATEGORY_LABELS:
+    if category not in category_labels(DB_PATH):
         raise FieldError("这个分类不在可选范围里。")
     return category
 
@@ -1813,6 +1889,9 @@ def update_transaction_fields(transaction_uid: str, fields: dict) -> dict:
             evidence["persisted"] = bool(capture_hash)
             return evidence
 
+        if "category" in changed and changed["category"] not in category_labels(DB_PATH, enabled_only=True):
+            return {"ok": False, "code": "disabled_category", "answer": "这个分类已停用，不能再用于新的校正。"}
+
         assignments = dict(changed)
         assignments["reviewed_at"] = reviewed_at
         # 只有分类被改动时才动分类元数据，改个金额不该把分类来源写成人工。
@@ -1854,6 +1933,70 @@ def update_transaction_fields(transaction_uid: str, fields: dict) -> dict:
     return evidence
 
 
+def _safe_related_ocr_path(image_path: str | None) -> Path | None:
+    image = _safe_capture_image_path(image_path)
+    if image is None:
+        return None
+    candidate = ROOT_DIR / "data" / "ocr_texts" / f"{image.stem}.txt"
+    try:
+        resolved = candidate.resolve(strict=True)
+        resolved.relative_to((ROOT_DIR / "data").resolve(strict=True))
+    except (FileNotFoundError, OSError, ValueError):
+        return None
+    return resolved if resolved.is_file() else None
+
+
+def delete_transaction(transaction_uid: str) -> dict:
+    if DEMO_MODE:
+        return {"ok": False, "code": "demo_readonly", "answer": "演示模式下账本是只读的，不能删除交易。"}
+    if not transaction_uid:
+        return {"ok": False, "code": "missing_uid", "answer": "缺少交易编号。"}
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    deleted_files: list[str] = []
+    try:
+        row = conn.execute(
+            """
+            select t.raw_capture_hash, c.image_path
+            from transactions t
+            left join raw_bill_captures c on c.capture_hash = t.raw_capture_hash
+            where t.transaction_uid = ? limit 1
+            """,
+            (transaction_uid,),
+        ).fetchone()
+        if row is None:
+            return {"ok": False, "code": "not_found", "answer": "找不到这笔交易。"}
+
+        capture_hash = row["raw_capture_hash"]
+        image_path = row["image_path"]
+        conn.execute("delete from transactions where transaction_uid = ?", (transaction_uid,))
+        capture_is_orphaned = bool(capture_hash) and not conn.execute(
+            "select 1 from transactions where raw_capture_hash = ? limit 1", (capture_hash,)
+        ).fetchone()
+        if capture_is_orphaned:
+            # 先删本地工件；若文件系统拒绝操作，数据库事务不会提交，记录仍可追溯。
+            for artifact in (_safe_capture_image_path(image_path), _safe_related_ocr_path(image_path)):
+                if artifact is not None:
+                    artifact.unlink()
+                    deleted_files.append(str(artifact))
+            conn.execute("delete from transaction_overrides where raw_capture_hash = ?", (capture_hash,))
+            conn.execute("delete from raw_bill_captures where capture_hash = ?", (capture_hash,))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    return {
+        "ok": True,
+        "deleted_uid": transaction_uid,
+        "deleted_capture": bool(capture_is_orphaned),
+        "deleted_file_count": len(deleted_files),
+    }
+
+
 def transaction_evidence_image_path(transaction_uid: str) -> Path | None:
     if not transaction_uid:
         return None
@@ -1878,6 +2021,8 @@ def ensure_database_schema() -> None:
     conn = sqlite3.connect(DB_PATH)
     try:
         ensure_bill_tables(conn)
+        ensure_category_tables(conn)
+        ensure_prompt_tables(conn)
         conn.execute(
             """
             create table if not exists profile_reports (
@@ -1891,6 +2036,8 @@ def ensure_database_schema() -> None:
             )
             """
         )
+        # AI 推荐提问已改为前端内置问题库，这张缓存表不再有人读写。
+        conn.execute("drop table if exists suggested_questions")
         conn.commit()
     finally:
         conn.close()
@@ -1924,7 +2071,9 @@ def sync_mail_once() -> dict:
         }
 
     started_at = datetime.now()
-    before_count = transaction_count()
+    before_payload = build_payload()
+    before_uids = {tx.get("transaction_uid") for tx in before_payload.get("transactions", [])}
+    before_count = len(before_uids)
     client = None
     try:
         client = connect_imap(host, user, password, mailbox, timeout=SYNC_TIMEOUT_SECONDS)
@@ -1938,7 +2087,20 @@ def sync_mail_once() -> dict:
     finally:
         safe_logout(client)
 
-    after_count = transaction_count()
+    after_payload = build_payload()
+    after_transactions = after_payload.get("transactions", [])
+    after_by_uid = {tx.get("transaction_uid"): tx for tx in after_transactions}
+    new_transactions = [tx for tx in after_transactions if tx.get("transaction_uid") not in before_uids]
+    annotated_items = []
+    for item in detail["items"][-12:]:
+        stored = after_by_uid.get(item.get("transaction_uid"), item)
+        missing = stored.get("correction_fields") or correction_fields(stored)
+        annotated_items.append({
+            **item,
+            "correction_fields": missing,
+            "analysis_eligible": not missing,
+        })
+    after_count = len(after_transactions)
     classification_started = trigger_background_classification()
     finished_at = datetime.now()
     return {
@@ -1955,9 +2117,11 @@ def sync_mail_once() -> dict:
         "processed_attachments": detail["processed_attachments"],
         "transactions_before": before_count,
         "transactions_after": after_count,
-        "new_transactions": max(after_count - before_count, 0),
+        "new_transactions": len(new_transactions),
+        "new_correction_count": sum(1 for tx in new_transactions if not tx.get("analysis_eligible", True)),
+        "correction_pending_count": after_payload.get("correction_pending_count", 0),
         "classification_started": classification_started,
-        "items": detail["items"][-12:],
+        "items": annotated_items,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
     }
 
@@ -2023,6 +2187,33 @@ class CFORequestHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def read_json_body(self) -> dict:
+        length = int(self.headers.get("Content-Length", "0"))
+        if length > MAX_REQUEST_BODY_BYTES:
+            raise CategoryError("请求内容过长。", code="payload_too_large", status=413)
+        payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+        if not isinstance(payload, dict):
+            raise CategoryError("请求格式必须是 JSON 对象。", code="invalid_json")
+        return payload
+
+    def category_error(self, error: CategoryError) -> None:
+        self.send_json(
+            {"ok": False, "code": error.code, "answer": str(error), **error.detail},
+            status=HTTPStatus(error.status),
+        )
+
+    def allow_category_write(self, subject: str = "分类") -> bool:
+        if DEMO_MODE:
+            self.send_json(
+                {"ok": False, "code": "demo_readonly", "answer": f"演示模式只能查看{subject}，不能修改。"},
+                status=HTTPStatus.FORBIDDEN,
+            )
+            return False
+        if not access_token_configured() or not self.is_authenticated():
+            self.send_unauthorized_json()
+            return False
+        return True
+
     def do_GET(self) -> None:
         parsed_url = urlparse(self.path)
         path = parsed_url.path
@@ -2050,6 +2241,20 @@ class CFORequestHandler(SimpleHTTPRequestHandler):
                 self.send_json(build_payload())
             except Exception as exc:
                 self.send_json({"ok": False, "error": safe_error_message("账本读取失败", exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        if path == "/api/categories":
+            try:
+                self.send_json(get_catalog(DB_PATH, demo=DEMO_MODE))
+            except Exception as exc:
+                self.send_json({"ok": False, "answer": safe_error_message("分类目录读取失败", exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        if path == "/api/custom-prompts":
+            try:
+                self.send_json(list_prompts(DB_PATH))
+            except Exception as exc:
+                self.send_json({"ok": False, "answer": safe_error_message("我的常问读取失败", exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
 
         if path == "/api/profile-report":
@@ -2128,6 +2333,35 @@ class CFORequestHandler(SimpleHTTPRequestHandler):
             self.send_unauthorized_json()
             return
 
+        if path == "/api/categories":
+            if DEMO_MODE:
+                self.send_json({"ok": False, "code": "demo_readonly", "answer": "演示模式只能查看分类，不能新建。"}, status=HTTPStatus.FORBIDDEN)
+                return
+            try:
+                item = create_category(DB_PATH, self.read_json_body())
+                self.send_json({"ok": True, "category": item}, status=HTTPStatus.CREATED)
+            except CategoryError as exc:
+                self.category_error(exc)
+            except json.JSONDecodeError:
+                self.send_json({"ok": False, "answer": "请求格式不是合法 JSON。"}, status=HTTPStatus.BAD_REQUEST)
+            except Exception as exc:
+                self.send_json({"ok": False, "answer": safe_error_message("新建分类失败", exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        if path == "/api/custom-prompts":
+            if not self.allow_category_write("我的常问"):
+                return
+            try:
+                item = create_prompt(DB_PATH, self.read_json_body())
+                self.send_json({"ok": True, "prompt": item}, status=HTTPStatus.CREATED)
+            except CategoryError as exc:
+                self.category_error(exc)
+            except json.JSONDecodeError:
+                self.send_json({"ok": False, "answer": "请求格式不是合法 JSON。"}, status=HTTPStatus.BAD_REQUEST)
+            except Exception as exc:
+                self.send_json({"ok": False, "answer": safe_error_message("新建常问失败", exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
         if path == "/api/sync-mail":
             try:
                 self.send_json(sync_mail_once())
@@ -2163,6 +2397,26 @@ class CFORequestHandler(SimpleHTTPRequestHandler):
                 self.send_json({"ok": False, "answer": safe_error_message("保存交易改动失败", exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
 
+        if path == "/api/transaction-delete":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length > MAX_REQUEST_BODY_BYTES:
+                    self.send_json({"ok": False, "answer": "请求内容过长。"}, status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+                    return
+                payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+                result = delete_transaction(str(payload.get("uid", "")).strip())
+                status = HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST
+                if result.get("code") == "not_found":
+                    status = HTTPStatus.NOT_FOUND
+                elif result.get("code") == "demo_readonly":
+                    status = HTTPStatus.FORBIDDEN
+                self.send_json(result, status=status)
+            except json.JSONDecodeError:
+                self.send_json({"ok": False, "answer": "请求格式不是合法 JSON。"}, status=HTTPStatus.BAD_REQUEST)
+            except Exception as exc:
+                self.send_json({"ok": False, "answer": safe_error_message("删除交易失败", exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
         if path == "/api/profile-report":
             try:
                 length = int(self.headers.get("Content-Length", "0"))
@@ -2192,6 +2446,11 @@ class CFORequestHandler(SimpleHTTPRequestHandler):
             payload = json.loads(raw_body or "{}")
             message = str(payload.get("message", "")).strip()
             period = str(payload.get("period", "today"))
+            # 自定义区间的闭区间日期，校验交给 parse_custom_range，非法值退回「全部」。
+            custom_range = {
+                "start": str(payload.get("start_date", ""))[:32],
+                "end": str(payload.get("end_date", ""))[:32],
+            }
             history = payload.get("history") if isinstance(payload.get("history"), list) else []
             budgets = sanitized_budgets(payload.get("budgets"))
             if not message:
@@ -2200,11 +2459,103 @@ class CFORequestHandler(SimpleHTTPRequestHandler):
             if len(message) > MAX_CHAT_MESSAGE_CHARS:
                 self.send_json({"ok": False, "answer": f"问题太长了，请控制在 {MAX_CHAT_MESSAGE_CHARS} 个字以内。"}, status=HTTPStatus.BAD_REQUEST)
                 return
-            self.send_json(call_deepseek(message, period, history, budgets))
+            self.send_json(call_deepseek(message, period, history, budgets, custom_range))
         except json.JSONDecodeError:
             self.send_json({"ok": False, "answer": "请求格式不是合法 JSON。"}, status=HTTPStatus.BAD_REQUEST)
         except Exception as exc:
             self.send_json({"ok": False, "answer": safe_error_message("对话请求失败", exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def do_PATCH(self) -> None:
+        path = urlparse(self.path).path
+        prompt_prefix = "/api/custom-prompts/"
+        if path.startswith(prompt_prefix) and path[len(prompt_prefix):]:
+            if not self.allow_category_write("我的常问"):
+                return
+            try:
+                item = patch_prompt(DB_PATH, path[len(prompt_prefix):], self.read_json_body())
+                self.send_json({"ok": True, "prompt": item})
+            except CategoryError as exc:
+                self.category_error(exc)
+            except json.JSONDecodeError:
+                self.send_json({"ok": False, "answer": "请求格式不是合法 JSON。"}, status=HTTPStatus.BAD_REQUEST)
+            except Exception as exc:
+                self.send_json({"ok": False, "answer": safe_error_message("保存常问失败", exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        prefix = "/api/categories/"
+        if not path.startswith(prefix) or not path[len(prefix):]:
+            self.send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
+            return
+        if not self.allow_category_write():
+            return
+        try:
+            item = patch_category(DB_PATH, path[len(prefix):], self.read_json_body())
+            self.send_json({"ok": True, "category": item})
+        except CategoryError as exc:
+            self.category_error(exc)
+        except json.JSONDecodeError:
+            self.send_json({"ok": False, "answer": "请求格式不是合法 JSON。"}, status=HTTPStatus.BAD_REQUEST)
+        except Exception as exc:
+            self.send_json({"ok": False, "answer": safe_error_message("保存分类失败", exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def do_PUT(self) -> None:
+        path = urlparse(self.path).path
+        if path == "/api/custom-prompts/order":
+            if not self.allow_category_write("我的常问"):
+                return
+            try:
+                items = set_prompt_order(DB_PATH, self.read_json_body().get("prompt_ids"))
+                self.send_json({"ok": True, "prompts": items})
+            except CategoryError as exc:
+                self.category_error(exc)
+            except json.JSONDecodeError:
+                self.send_json({"ok": False, "answer": "请求格式不是合法 JSON。"}, status=HTTPStatus.BAD_REQUEST)
+            except Exception as exc:
+                self.send_json({"ok": False, "answer": safe_error_message("保存常问顺序失败", exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        if path != "/api/categories/primary-order":
+            self.send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
+            return
+        if not self.allow_category_write():
+            return
+        try:
+            payload = self.read_json_body()
+            items = set_primary_order(DB_PATH, payload.get("category_ids"))
+            self.send_json({"ok": True, "categories": items})
+        except CategoryError as exc:
+            self.category_error(exc)
+        except json.JSONDecodeError:
+            self.send_json({"ok": False, "answer": "请求格式不是合法 JSON。"}, status=HTTPStatus.BAD_REQUEST)
+        except Exception as exc:
+            self.send_json({"ok": False, "answer": safe_error_message("保存常用顺序失败", exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def do_DELETE(self) -> None:
+        path = urlparse(self.path).path
+        prompt_prefix = "/api/custom-prompts/"
+        if path.startswith(prompt_prefix) and path[len(prompt_prefix):]:
+            if not self.allow_category_write("我的常问"):
+                return
+            try:
+                self.send_json(delete_prompt(DB_PATH, path[len(prompt_prefix):]))
+            except CategoryError as exc:
+                self.category_error(exc)
+            except Exception as exc:
+                self.send_json({"ok": False, "answer": safe_error_message("删除常问失败", exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        prefix = "/api/categories/"
+        if not path.startswith(prefix) or not path[len(prefix):]:
+            self.send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
+            return
+        if not self.allow_category_write():
+            return
+        try:
+            self.send_json(delete_category(DB_PATH, path[len(prefix):]))
+        except CategoryError as exc:
+            self.category_error(exc)
+        except Exception as exc:
+            self.send_json({"ok": False, "answer": safe_error_message("删除分类失败", exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
 
 def main() -> None:

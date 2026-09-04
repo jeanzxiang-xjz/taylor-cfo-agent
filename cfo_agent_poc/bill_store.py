@@ -20,8 +20,10 @@ try:
         classify_locally,
         detect_category_and_thing,
     )
+    from cfo_agent_poc.category_catalog import ensure_category_tables, is_enabled_category
 except ModuleNotFoundError:  # Supports direct execution as cfo_agent_poc/bill_store.py.
     from bill_classifier import ClassificationResult, LOCAL_CATEGORY_RULES, classify_locally, detect_category_and_thing
+    from category_catalog import ensure_category_tables, is_enabled_category
 
 
 PROJECT_DIR = Path(__file__).resolve().parent
@@ -258,6 +260,8 @@ def connect() -> sqlite3.Connection:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(APP_DB)
     ensure_bill_tables(conn)
+    ensure_category_tables(conn)
+    conn.commit()
     return conn
 
 
@@ -299,7 +303,11 @@ def remember_merchant_classification(
     confidence: float,
     source: str,
 ) -> bool:
-    if not is_stable_merchant(merchant) or category in {"uncategorized", "personal_transfer"}:
+    if (
+        not is_stable_merchant(merchant)
+        or category in {"uncategorized", "personal_transfer"}
+        or not is_enabled_category(conn, category)
+    ):
         return False
     key = normalize_merchant_key(merchant)
     existing = conn.execute(
@@ -334,6 +342,8 @@ def merchant_memory_result(conn: sqlite3.Connection, merchant: str | None) -> Cl
         (key,),
     ).fetchone()
     if not row:
+        return None
+    if not is_enabled_category(conn, row[0]):
         return None
     return ClassificationResult(
         category=row[0],
@@ -758,6 +768,11 @@ def store_bill_capture(
     parsed = parse_bill_text(ocr_text, source=source, source_hint=source_hint)
     stored_image_path = portable_image_path(image_path)
     capture_hash = hashlib.sha256(f"{source}|{ocr_text}|{stored_image_path or ''}".encode("utf-8")).hexdigest()[:32]
+    # 没有平台交易号时，解析字段本身不足以稳定去重：两张缺时间、缺商户且
+    # 金额相同的截图会生成同一个 UID，后来的记录会把前一条覆盖。此时让
+    # 原始捕获成为身份来源；同一捕获重复处理仍然幂等，不同截图则都能追溯。
+    if not parsed.transaction_id:
+        parsed.transaction_uid = f"capture_{capture_hash[:24]}"
     now = datetime.now().isoformat(timespec="seconds")
 
     conn = connect()
@@ -770,6 +785,16 @@ def store_bill_capture(
         (capture_hash, source, normalize_text(ocr_text), stored_image_path, captured_at, now),
     )
     parsed = apply_persisted_classification(conn, parsed, capture_hash)
+    if (
+        parsed.classification_source in {"local_rule", "local_industry"}
+        and not is_enabled_category(conn, parsed.category)
+    ):
+        parsed.category = "uncategorized"
+        parsed.thing = None
+        parsed.category_confidence = 0
+        parsed.classification_source = "none"
+        parsed.classification_status = "pending"
+        parsed.classification_reason = "disabled_local_category"
     conn.execute(
         """
         insert into transactions

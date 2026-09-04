@@ -2,16 +2,17 @@
 
 **中文** · [English](README.en.md)
 
-<img src="cfo_agent_poc/web_app/assets/opening-cfo-illustration.webp" alt="Jeanz CFO Brain" width="640">
+<img src="cfo_agent_poc/web_app/assets/opening-cfo-illustration.webp" alt="XINYI CFO Brain" width="640">
 
 # My CFO Brain
 
 **支付后点一下，账单自动变成能分析、能追问的个人现金流系统。**
 
-一个本地优先（Local-first）的私人财务 CFO Agent：<br>
-iPhone 快捷指令捕获账单截图 → Mac 本地 OCR 与规则解析 → SQLite 结构化账本 → Web 财务大脑 + LLM 对话。
+一个自托管（Self-hosted）的私人财务 CFO Agent：<br>
+iPhone 快捷指令捕获账单截图 → OCR 与规则解析 → SQLite 结构化账本 → Web 财务大脑 + LLM 对话。<br>
+跑在自己的 Mac 上（OCR 全程离线），或者部署到自己的服务器 7×24 常驻。
 
-[![Platform](https://img.shields.io/badge/platform-macOS-black?logo=apple)](#-快速上手)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-black?logo=apple)](#-快速上手)
 [![Python](https://img.shields.io/badge/python-3.x-3776AB?logo=python&logoColor=white)](#-快速上手)
 [![React](https://img.shields.io/badge/react-19-61DAFB?logo=react&logoColor=black)](cfo_agent_poc/web_app)
 [![SQLite](https://img.shields.io/badge/storage-SQLite-003B57?logo=sqlite)](#-设计亮点)
@@ -49,14 +50,14 @@ iPhone 快捷指令捕获账单截图 → Mac 本地 OCR 与规则解析 → SQL
 
 | | 特性 | 说明 |
 |---|---|---|
-| 📸 | **近乎无感的采集** | iPhone 快捷指令对账单页截图并邮件发出，Mac 端 IMAP 自动拉取，无需手动录入 |
-| 🔍 | **本地 OCR** | 调用 macOS Vision 识别中文账单截图，免费、离线、截图不出本机 |
+| 📸 | **近乎无感的采集** | iPhone 快捷指令对账单页截图并邮件发出，服务端 IMAP 自动拉取，无需手动录入 |
+| 🔍 | **可插拔 OCR** | macOS 上走系统 Vision，免费、离线、截图不出本机；部署到 Linux 时切换到阿里云 OCR |
 | 🧾 | **混合智能解析** | 本地抽取金额、时间、商户和订单号；规则、商户记忆与 DeepSeek 共同补全消费分类 |
 | 🧠 | **财务大脑 Web UI** | 今日/本周/本月/全部四周期联动：总支出、场景权重、现金流趋势、预算进度 |
 | 💬 | **可对话的账本** | 接入 DeepSeek，直接问「这个月最大的支出是什么」，回答基于真实账本数据 |
 | 🔗 | **证据可追溯** | 每笔交易保留原始截图路径与 OCR 全文，解析错了能回查、改规则重跑 |
 | ♻️ | **幂等去重** | 基于交易单号/内容哈希生成唯一 ID，重复同步不会重复记账 |
-| 🔐 | **本地优先** | 账本存本机 SQLite，不依赖任何第三方记账平台；公网访问强制口令保护 |
+| 🔐 | **数据归自己** | 账本是一个 SQLite 文件，存在自己的机器上，不依赖任何第三方记账平台；公网访问强制口令保护 |
 
 ## 🎬 一笔钱的旅程
 
@@ -68,9 +69,9 @@ iPhone 快捷指令捕获账单截图 → Mac 本地 OCR 与规则解析 → SQL
 
 1. **支付完成**，打开微信/支付宝的账单详情页；
 2. **触发快捷指令**——截图，并把截图作为邮件附件发到同步邮箱（主题 `CFO_CAPTURE_SCREENSHOT`）；
-3. 在网页上点**「消费数据同步」**，Mac 端通过 IMAP 扫描未读邮件、下载命中的截图；
-4. **Vision OCR** 识别截图，原文留档到 `data/ocr_texts/`；
-5. **本地解析**出金额、时间、商户等事实字段，生成交易唯一 ID，**幂等写入 SQLite**；
+3. 在网页上点**「消费数据同步」**，服务端通过 IMAP 扫描未读邮件、下载命中的截图；
+4. **OCR** 识别截图（macOS 走系统 Vision，Linux 走阿里云），原文留档到 `data/ocr_texts/`；
+5. **规则解析**出金额、时间、商户等事实字段，生成交易唯一 ID，**幂等写入 SQLite**；
 6. 本地规则与商户记忆先完成分类，陌生消费由后台 DeepSeek 使用裁剪字段补全；
 7. 网页刷新统计、流水、趋势与预算进度；
 8. 你提问时，服务端把**裁剪过的账本上下文**注入给 DeepSeek，返回基于真实数据的分析。
@@ -91,10 +92,10 @@ cd my-cfo-agent
 
 ### 环境要求（接入真实账单时才需要）
 
-> 只想先看看？上面的 Demo 模式只需要 macOS + Python 3 + Node.js，邮箱和 API Key 都不用。
+> 只想先看看？上面的 Demo 模式只需要 Python 3 + Node.js，邮箱和 API Key 都不用。
 
-- **macOS**（OCR 依赖系统 Vision 框架）
-- Python 3
+- **macOS**，或 **Linux 服务器**（见下方「部署到 Linux 服务器」）
+- Python 3.10+
 - Node.js / npm（用于构建前端）
 - 一个开通了 IMAP 的邮箱及授权码（如 QQ 邮箱）
 - 一个 [DeepSeek API Key](https://platform.deepseek.com/)
@@ -228,14 +229,14 @@ CFO_OCR_REGION=cn-hangzhou
 | 层 | 职责 | 主要组件 |
 |---|---|---|
 | ① 移动端采集层 | 在账单页截图并发邮件 | iOS 快捷指令 |
-| ② 本地处理层 | 拉邮件、OCR、解析入库、服务编排 | `mail_sync.py` · `ocr_providers.py` · `bill_store.py` · `server.py` |
+| ② 服务端处理层 | 拉邮件、OCR、解析入库、服务编排 | `mail_sync.py` · `ocr_providers.py` · `bill_store.py` · `server.py` |
 | ③ 数据与智能层 | 存证据与结构化交易、LLM 对话 | SQLite `cfo.sqlite` · DeepSeek |
 | ④ 展示与访问层 | 财务大脑页面与访问控制 | React 19 + Vite · 口令认证 |
 
 **几个刻意的技术取舍：**
 
 - **采集用「快捷指令 + 邮件」而不是写手机 App**——私人场景下开发成本最低，且不需要向手机端暴露任何 HTTP 接口，截图借邮箱生态传递即可。
-- **OCR 默认用 macOS Vision 而不是云端 OCR**——本地、免费、中文账单识别质量好，截图永远不出本机；后端做成可插拔（`ocr_providers.py`），部署到 Linux 时才切到阿里云 OCR。
+- **OCR 做成可插拔而不是绑死一家**（`ocr_providers.py`）——macOS 上默认用系统 Vision：本地、免费、中文账单识别质量好，截图不出本机；但 Vision 是 Apple 独有的，要 7×24 常驻就得上 Linux 服务器，那里换成阿里云 OCR。对外只暴露 `ocr_image(path) -> str` 一个函数，下游解析器对换了哪家毫不知情。
 - **入库用规则解析而不是让 LLM 直接写库**——账单字段结构稳定，规则更可控、可解释、零 token 成本；大模型只负责「对话分析」这一层。
 - **后端用 Python 标准库 + SQLite**——本地私有服务不需要重框架，单文件数据库好备份、可直接用 SQL 查询。
 
@@ -255,7 +256,7 @@ CFO_OCR_REGION=cn-hangzhou
 
 ### 置信度打分
 
-事实解析和消费分类分别记录置信度。金额、时间、状态、商户等事实只由本地 OCR 与解析器确定；分类则标记来自本地规则、商户记忆、人工覆盖还是 DeepSeek，避免错误分类反过来抬高解析置信度。
+事实解析和消费分类分别记录置信度。金额、时间、状态、商户等事实只由 OCR 与规则解析器确定，大模型碰不到；分类则标记来自本地规则、商户记忆、人工覆盖还是 DeepSeek，避免错误分类反过来抬高解析置信度。
 
 ### 裁剪式上下文注入
 
@@ -267,12 +268,15 @@ CFO_OCR_REGION=cn-hangzhou
 
 ## 🔐 安全与隐私
 
-- 账本、截图、OCR 文本**默认全部存本机**，不依赖第三方记账平台，随时可自查、可删除。
+- 账本、截图、OCR 文本**全部存在你自己的机器上**（本机或自己的服务器），不依赖第三方记账平台，随时可自查、可删除。
 - DeepSeek 对话只接收**裁剪过的**账本上下文；后台分类只发送商户、商品、平台和支付应用，不发送截图、OCR 全文、金额、银行卡或交易号。
 - 未配置 `CFO_ACCESS_TOKEN` 时**禁止公网访问**；配置后页面需登录，API 支持 Cookie / Bearer / 自定义 Header 三种认证。
 - `.env`（邮箱授权码、API Key）与 `data/`（数据库、截图、OCR 文本）均已在 `.gitignore` 中排除。
 
-> 已知边界：对话链路仍会把部分交易上下文发给 DeepSeek。若需要完全本地化，可将 LLM 替换为本地模型（见 Roadmap）。
+> 已知边界：
+> - 对话链路会把部分交易上下文发给 DeepSeek。若需要完全本地化，可将 LLM 替换为本地模型（见 Roadmap）。
+> - **`CFO_OCR_PROVIDER=aliyun` 时，账单截图会上传给阿里云 OCR**——这是在 Linux 上换取 7×24 常驻的代价。留在 macOS 用 Vision，截图就始终不出本机。
+> - 部署到公网服务器时，`.env` 里的邮箱授权码、API Key 和整个账本都常驻在那台机器上。请务必设置强口令，并优先考虑 HTTPS。
 
 ## 🗺️ Roadmap
 
