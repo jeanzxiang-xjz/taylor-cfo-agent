@@ -4790,10 +4790,19 @@ function renderRangeMonths() {
 /** 选区只改 class，不重建网格——鼠标划过预览时才不会闪。 */
 function paintRangeSelection() {
   const draft = normalizedDraft();
-  if (!draft) return;
+  const cells = Array.from(document.querySelectorAll("#rangeMonths [data-range-day]"));
+  if (!draft) {
+    // 取消选中之后得把上一次的高亮抹掉，否则日历上还留着一段「选中的样子」。
+    cells.forEach((cell) => {
+      cell.classList.remove("is-in-range", "is-start", "is-end", "is-single", "is-preview");
+      cell.tabIndex = -1;
+    });
+    const first = cells.find((cell) => !cell.disabled);
+    if (first) first.tabIndex = 0;
+    return;
+  }
   const pending = !state.rangeDraft.end;
   let hasTabStop = false;
-  const cells = Array.from(document.querySelectorAll("#rangeMonths [data-range-day]"));
   cells.forEach((cell) => {
     const day = dateFromKey(cell.dataset.rangeDay);
     const inRange = day >= draft.start && day <= draft.end;
@@ -4813,20 +4822,46 @@ function paintRangeSelection() {
   }
 }
 
+/*
+ * 「应用」这枚按钮必须自己说清楚这一下会应用什么。原来它永远只写「应用」：
+ * 只点了起点（第二下没点上、或者又点回同一天）时，按下去会静默变成一天的区间——
+ * 人以为选的是 9/1–9/4，结果只看到 9/1。现在按钮上写的就是实际会生效的那段。
+ */
 function renderRangeSummary() {
   const node = $("rangeSummary");
+  const apply = $("rangeApply");
   const draft = normalizedDraft();
-  if (!node || !draft) return;
-  if (!state.rangeDraft.end && !state.rangeHoverKey) {
+  if (!node) return;
+
+  if (!draft) {
     node.innerHTML = `
-      <b>${escapeHtml(customRangeLabel(draft))}</b>
-      <span>再点一天定终点，或者就按这一天应用。</span>
+      <b>还没选</b>
+      <span>点日历里的一天定起点，或者从上面挑一段。</span>
     `;
+    if (apply) {
+      apply.disabled = true;
+      apply.textContent = "应用";
+    }
     return;
   }
+
+  const singleDay = sameDay(draft.start, draft.end);
   const bounds = { start: draft.start, end: addDays(draft.end, 1) };
   const transactions = transactionsBetween(bounds.start, bounds.end);
   const days = Math.max(1, Math.round((bounds.end - bounds.start) / 86400000));
+
+  if (apply) {
+    apply.disabled = false;
+    apply.textContent = singleDay ? "只应用这一天" : `应用这 ${days} 天`;
+  }
+
+  if (!state.rangeDraft.end && !state.rangeHoverKey) {
+    node.innerHTML = `
+      <b>${escapeHtml(customRangeLabel(draft))}</b>
+      <span>还差终点：再点一天，或者按「只应用这一天」。</span>
+    `;
+    return;
+  }
   node.innerHTML = `
     <b>${escapeHtml(customRangeLabel(draft))}</b>
     <span>${days} 天 · ${transactions.length} 笔 · ${escapeHtml(formatMoney(sum(transactions)))}</span>
@@ -4877,12 +4912,24 @@ function renderRangePicker() {
   updateRangeNavState();
 }
 
+/*
+ * 日历该从哪个月排起。双月视图从起点排，起点和终点通常一屏都看得到；
+ * 窄屏一次只画一个月，再从起点排就会把人扔在上个月——默认区间是「最近 30 天」，
+ * 起点常常在上个月，于是这个月的日子一格都看不见，得先发现翻页箭头才能往下走。
+ * 更糟的是选到一半被弹回上个月：第二下点不到想点的那天，最后应用出去的就只剩起点
+ * 那一天。窄屏一律从靠近今天的那一头排起。
+ */
+function rangeAnchorMonth(range) {
+  const anchor = (isDualMonthView() ? range.start : range.end || range.start) || range.start;
+  return new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+}
+
 function openRangePicker() {
   const base = state.customRange || presetRange("last30");
   state.rangeDraft = { start: base.start, end: base.end };
   state.rangeHoverKey = null;
   state.rangeFocusKey = dateKey(base.start);
-  state.rangeCursor = new Date(base.start.getFullYear(), base.start.getMonth(), 1);
+  state.rangeCursor = rangeAnchorMonth(base);
   $("customPeriodBtn")?.setAttribute("aria-expanded", "true");
   renderRangePicker();
   openModal("rangeModal");
@@ -5467,12 +5514,19 @@ function wireInteractions() {
   $("rangePresets").addEventListener("click", (event) => {
     const button = event.target.closest("[data-range-preset]");
     if (!button) return;
+    // 再点一次选中的那枚就是取消选中：之前点了没反应，看着像卡住了。
+    if (button.getAttribute("aria-pressed") === "true") {
+      state.rangeDraft = null;
+      state.rangeHoverKey = null;
+      renderRangePicker();
+      return;
+    }
     const range = presetRange(button.dataset.rangePreset);
     if (!range) return;
     state.rangeDraft = { start: range.start, end: range.end };
     state.rangeHoverKey = null;
     state.rangeFocusKey = dateKey(range.start);
-    state.rangeCursor = new Date(range.start.getFullYear(), range.start.getMonth(), 1);
+    state.rangeCursor = rangeAnchorMonth(range);
     renderRangePicker();
   });
 
