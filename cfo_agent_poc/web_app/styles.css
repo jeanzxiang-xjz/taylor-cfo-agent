@@ -132,6 +132,14 @@
   --cat-24: color-mix(in srgb, #7b839f 72%, var(--paper-0));
   --cat-25: color-mix(in srgb, #858569 72%, var(--paper-0));
   --cat-26: color-mix(in srgb, #7b7378 72%, var(--paper-0));
+  /* 服饰装扮 / 宠物 / 美容美发 / 家具家装 / 母婴亲子：
+     取色相环上最空的五段，与既有 26 色的最近邻 ΔE 为 7.0，
+     远高于原色板自身最差的一对（2.0），加进来不会更难分。 */
+  --cat-27: color-mix(in srgb, #569f6e 72%, var(--paper-0));
+  --cat-28: color-mix(in srgb, #6a9852 72%, var(--paper-0));
+  --cat-29: color-mix(in srgb, #587e7c 72%, var(--paper-0));
+  --cat-30: color-mix(in srgb, #6764aa 72%, var(--paper-0));
+  --cat-31: color-mix(in srgb, #9d59a6 72%, var(--paper-0));
 
   /* — 语义别名 — */
   /* 页面地刻意不取自纸色阶：色阶要保持轻盈好让卡片浮起来，

@@ -12,7 +12,7 @@ ALLOWED_ICON_KEYS = (
     "cup", "meal", "car", "bolt", "bag", "fruit", "book", "cart",
     "train", "heart", "home", "phone", "ticket", "wallet", "drop",
     "pencil", "screen", "plane", "gift", "transfer", "circle", "pet",
-    "medicine", "parcel", "beauty", "delivery", "apparel",
+    "medicine", "parcel", "beauty", "delivery", "apparel", "milk_bottle",
 )
 # 色板取 styles.css 的 --cat-1~26，与 legacy-controller 的 CATEGORY_COLORS 同一套。
 ALLOWED_COLOR_TOKENS = tuple(f"cat-{index}" for index in range(1, 27))
@@ -48,6 +48,11 @@ DEFAULT_CATEGORIES = (
     ("leisure_travel", "休闲旅行", "旅行休闲", "plane", "cat-14"),
     ("lottery", "彩票", "彩票", "gift", "cat-15"),
     ("personal_transfer", "个人转账", "个人转账", "transfer", "cat-8"),
+    ("apparel", "服饰装扮", "服饰穿搭", "apparel", "cat-27"),
+    ("pet", "宠物", "宠物", "pet", "cat-28"),
+    ("beauty", "美容美发", "美容美发", "beauty", "cat-29"),
+    ("furniture_home", "家具家装", "家具家装", "home", "cat-30"),
+    ("maternal_child", "母婴亲子", "母婴亲子", "milk_bottle", "cat-31"),
     ("uncategorized", "未分类", "未分类", "circle", "cat-26"),
 )
 
