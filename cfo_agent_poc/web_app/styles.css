@@ -104,42 +104,38 @@
   --rose-8: #963747;
   --rose-bg: #fae9ec;
 
-  /* — 类别数据色板（仅用于图表/色点）—
-     25 个常见消费类型各有稳定颜色；共享同一份纸白混色比例，保持磨砂主题融洽。 */
-  --cat-1: color-mix(in srgb, #9b5b7e 72%, var(--paper-0));
-  --cat-2: color-mix(in srgb, #4f829f 72%, var(--paper-0));
-  --cat-3: color-mix(in srgb, #9a784a 72%, var(--paper-0));
-  --cat-4: color-mix(in srgb, #ac6570 72%, var(--paper-0));
-  --cat-5: color-mix(in srgb, #7868a0 72%, var(--paper-0));
-  --cat-6: color-mix(in srgb, #4b8f7a 72%, var(--paper-0));
-  --cat-7: color-mix(in srgb, #806f89 72%, var(--paper-0));
-  --cat-8: color-mix(in srgb, #77737d 72%, var(--paper-0));
-  --cat-9: color-mix(in srgb, #6593ad 72%, var(--paper-0));
-  --cat-10: color-mix(in srgb, #a37862 72%, var(--paper-0));
-  --cat-11: color-mix(in srgb, #718d70 72%, var(--paper-0));
-  --cat-12: color-mix(in srgb, #a05f91 72%, var(--paper-0));
-  --cat-13: color-mix(in srgb, #8876aa 72%, var(--paper-0));
-  --cat-14: color-mix(in srgb, #538c9b 72%, var(--paper-0));
-  --cat-15: color-mix(in srgb, #a98954 72%, var(--paper-0));
-  --cat-16: color-mix(in srgb, #617aa3 72%, var(--paper-0));
-  --cat-17: color-mix(in srgb, #b27287 72%, var(--paper-0));
-  --cat-18: color-mix(in srgb, #7f9162 72%, var(--paper-0));
-  --cat-19: color-mix(in srgb, #9a7296 72%, var(--paper-0));
-  --cat-20: color-mix(in srgb, #5b93a6 72%, var(--paper-0));
-  --cat-21: color-mix(in srgb, #95806a 72%, var(--paper-0));
-  --cat-22: color-mix(in srgb, #7481ad 72%, var(--paper-0));
-  --cat-23: color-mix(in srgb, #a16970 72%, var(--paper-0));
-  --cat-24: color-mix(in srgb, #7b839f 72%, var(--paper-0));
-  --cat-25: color-mix(in srgb, #858569 72%, var(--paper-0));
-  --cat-26: color-mix(in srgb, #7b7378 72%, var(--paper-0));
-  /* 服饰装扮 / 宠物 / 美容美发 / 家具家装 / 母婴亲子：
-     取色相环上最空的五段，与既有 26 色的最近邻 ΔE 为 7.0，
-     远高于原色板自身最差的一对（2.0），加进来不会更难分。 */
-  --cat-27: color-mix(in srgb, #569f6e 72%, var(--paper-0));
-  --cat-28: color-mix(in srgb, #6a9852 72%, var(--paper-0));
-  --cat-29: color-mix(in srgb, #587e7c 72%, var(--paper-0));
-  --cat-30: color-mix(in srgb, #6764aa 72%, var(--paper-0));
-  --cat-31: color-mix(in srgb, #9d59a6 72%, var(--paper-0));
+  /* — 类别色板：12 色相 × 深浅两档 + 2 支中性，合 26 色，选择器正好两排 13。
+     旧色板全部套 color-mix(hue 72%, --paper-0) 冲淡，明度饱和度被压成同一档，
+     最近邻 ΔE 只有 2.0，肉眼几乎分不开。这里改为按色相逐个反解明度，
+     让浅排统一落在对底纸 2.45:1、深排 5.6:1——黄绿天生亮，统一 HSL 明度
+     会让它们淡到看不见，所以补偿必须按色相做。最近邻 ΔE 提到 10.9。
+     上下两排同色相列对齐，深浅本身就是一组可用的区分维度。 */
+  --cat-1: #cc8899;           /* 浅 · 玫瑰 */
+  --cat-2: #c58f78;           /* 浅 · 砖橙 */
+  --cat-3: #b79858;           /* 浅 · 琥珀 */
+  --cat-4: #9da045;           /* 浅 · 芥黄 */
+  --cat-5: #70aa49;           /* 浅 · 橄榄 */
+  --cat-6: #4aae7c;           /* 浅 · 翠绿 */
+  --cat-7: #49aaa6;           /* 浅 · 青碧 */
+  --cat-8: #6aa3bf;           /* 浅 · 天蓝 */
+  --cat-9: #879bcb;           /* 浅 · 靛蓝 */
+  --cat-10: #a492d0;          /* 浅 · 薰衣草 */
+  --cat-11: #be88cc;          /* 浅 · 紫罗兰 */
+  --cat-12: #cb85b6;          /* 浅 · 洋红 */
+  --cat-13: #a19a9a;          /* 浅 · 中性 */
+  --cat-14: #91495b;          /* 深 · 玫瑰 */
+  --cat-15: #815541;          /* 深 · 砖橙 */
+  --cat-16: #705d38;          /* 深 · 琥珀 */
+  --cat-17: #616232;          /* 深 · 芥黄 */
+  --cat-18: #496935;          /* 深 · 橄榄 */
+  --cat-19: #356a4f;          /* 深 · 翠绿 */
+  --cat-20: #346866;          /* 深 · 青碧 */
+  --cat-21: #3d6478;          /* 深 · 天蓝 */
+  --cat-22: #495f91;          /* 深 · 靛蓝 */
+  --cat-23: #6a52a2;          /* 深 · 薰衣草 */
+  --cat-24: #824991;          /* 深 · 紫罗兰 */
+  --cat-25: #8e4778;          /* 深 · 洋红 */
+  --cat-26: #7b7378;          /* 深 · 中性（未分类 / 图表「其他」保留） */
 
   /* — 语义别名 — */
   /* 页面地刻意不取自纸色阶：色阶要保持轻盈好让卡片浮起来，
@@ -5013,10 +5009,20 @@ svg.category-symbol {
 }
 
 .category-icon-options,
+/* 固定 13 列：26 色永远是整齐两排，上下同色相对齐，深浅本身成为一条可读的轴。
+   用 flex-wrap 的话每排几个取决于面板宽度，窄屏会退回三排、深浅也就错位了。 */
 .category-color-options {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(13, minmax(0, 1fr));
   gap: 7px;
+  justify-items: center;
+}
+
+.category-color-options span {
+  width: 100%;
+  max-width: 36px;
+  height: auto;
+  aspect-ratio: 1;
 }
 
 .category-icon-options label,
