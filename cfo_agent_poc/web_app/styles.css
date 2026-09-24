@@ -4588,6 +4588,64 @@ body.modal-open {
   background: var(--paper-1);
 }
 
+.category-search {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-5) var(--sp-5) 0;
+  padding: 0 var(--sp-4);
+  height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper-2);
+  transition: border-color var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
+}
+
+/* 聚焦态沿用 .chat-input-row / .field-control 那套：洋红描边 + 一圈淡光晕。
+   原生 :focus-visible 的光晕要单独关掉，否则会和这圈叠成又粗又硬的双色框。 */
+.category-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--orchid-6) 17%, transparent);
+}
+
+.category-search svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: var(--muted-dim);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.category-search input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: none;
+  color: var(--text-strong);
+  font-size: var(--fs-sm);
+}
+
+.category-search input:focus {
+  outline: 0;
+}
+
+.category-search input:focus-visible {
+  box-shadow: none;
+}
+
+.category-search input::placeholder {
+  color: var(--muted-dim);
+}
+
+.category-search input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
 .category-list {
   padding: var(--sp-5);
 }

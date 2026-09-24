@@ -14,8 +14,9 @@ ALLOWED_ICON_KEYS = (
     "pencil", "screen", "plane", "gift", "transfer", "circle", "pet",
     "medicine", "parcel", "beauty", "delivery", "apparel", "milk_bottle",
 )
-# 色板取 styles.css 的 --cat-1~26，与 legacy-controller 的 CATEGORY_COLORS 同一套。
-ALLOWED_COLOR_TOKENS = tuple(f"cat-{index}" for index in range(1, 27))
+# 与 styles.css 的 --cat-1..31 一一对应。内置分类已用到 cat-31，
+# 这里少一个，patch_category 改图标时会带着原色重校验，直接报「颜色不在安全色板里」。
+ALLOWED_COLOR_TOKENS = tuple(f"cat-{index}" for index in range(1, 32))
 
 # The immutable ids and system names are classification semantics. display_name is
 # the user-facing layer and is only used to seed a new catalog.
