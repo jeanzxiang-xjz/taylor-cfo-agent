@@ -2313,6 +2313,16 @@ function orderArrow(direction) {
   return `<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">${ORDER_ARROWS[direction]}</svg>`;
 }
 
+function leastUsedCategoryColor() {
+  const options = state.categoryAllowedColors;
+  if (!options || !options.length) return "cat-1";
+  const counts = new Map(options.map((color) => [color, 0]));
+  state.categories.forEach((item) => {
+    if (counts.has(item.color_token)) counts.set(item.color_token, counts.get(item.color_token) + 1);
+  });
+  return options.reduce((best, color) => (counts.get(color) < counts.get(best) ? color : best), options[0]);
+}
+
 function renderCategoryRow(item, { primary = false, index = 0, total = 1 } = {}) {
   const selected = state.categorySelectedId === item.id && !state.categoryDraftNew;
   const readonly = state.demo ? " disabled" : "";
@@ -2466,7 +2476,7 @@ function renderCategoryEditor() {
     id: "",
     display_name: "",
     icon_key: state.categoryAllowedIcons[0] || "circle",
-    color_token: state.categoryAllowedColors[0] || "cat-1",
+    color_token: leastUsedCategoryColor(),
     is_enabled: true,
     is_primary: false,
     is_system: false,
